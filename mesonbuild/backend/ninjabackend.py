@@ -1601,7 +1601,10 @@ class NinjaBackend(backends.Backend):
                     # TODO: introspection?
                     cython_sources.append(output)
                 else:
-                    generated_sources[ssrc] = mesonlib.File.from_built_file(gen.subdir, ssrc)
+                    if isinstance(gen, build.CustomTargetIndex):
+                        generated_sources[ssrc] = mesonlib.File.from_built_file(gen.get_subdir(), ssrc)
+                    else:
+                        generated_sources[ssrc] = mesonlib.File.from_built_file(gen.subdir, ssrc)
 
         return static_sources, generated_sources, cython_sources
 
