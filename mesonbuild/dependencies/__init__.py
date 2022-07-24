@@ -31,6 +31,7 @@ from .dev import (
     llvm_factory, zlib_factory)
 from .coarrays import coarray_factory
 from .mpi import mpi_factory
+from .numpy import numpy_factory
 from .scalapack import scalapack_factory
 from .misc import (
     BlocksDependency, OpenMPDependency, cups_factory, curses_factory, gpgme_factory,
@@ -242,6 +243,7 @@ packages.update({
     'coarray': coarray_factory,
     'hdf5': hdf5_factory,
     'mpi': mpi_factory,
+    'numpy': numpy_factory,
     'scalapack': scalapack_factory,
 
     # From misc:
