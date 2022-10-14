@@ -32,6 +32,7 @@ from .dev import (
 from .coarrays import coarray_factory
 from .mpi import mpi_factory
 from .scalapack import scalapack_factory
+from .blas_lapack import openblas_factory
 from .misc import (
     BlocksDependency, OpenMPDependency, cups_factory, curses_factory, gpgme_factory,
     libgcrypt_factory, libwmf_factory, netcdf_factory, pcap_factory, python3_factory,
@@ -276,6 +277,9 @@ packages.update({
     'sdl2': sdl2_factory,
     'wxwidgets': WxDependency,
     'vulkan': vulkan_factory,
+
+    # From blas_lapack:
+    'openblas': openblas_factory,
 })
 _packages_accept_language.update({
     'hdf5',
