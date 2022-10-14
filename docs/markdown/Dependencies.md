@@ -315,6 +315,102 @@ dep = dependency('appleframeworks', modules : 'foundation')
 
 These dependencies can never be found for non-OSX hosts.
 
+## BLAS and LAPACK
+
+*(added 0.64.0)*
+
+Enables compiling and linking against BLAS and LAPACK libraries. BLAS and
+LAPACK are generic APIs, which can be provided by a number of different
+implementations. It is possible to request either any implementation that
+provides the API, or a specific implementation like OpenBLAS or MKL.
+Furthermore, a preferred order may be specified, as well as the bitness (32 or
+64) of the interface and whether to use the C or Fortran APIs.
+
+Using the generic `'blas'` or `'lapack'` will try to find any matching
+implementation. The search order over implementations is not guaranteed; Meson
+aims to search them from higher to lower performance.
+
+```meson
+dependency('blas', interface : 'lp64', cblas : true)
+dependency('lapack', interface : 'ilp64', lapacke : false)
+```
+
+Keywords:
+- `interface`: options are `lp64` for 32-bit LP64, and `ilp64` for 64-bit
+  ILP64. Default is `lp64`.
+- `cblas`: `true` or `false`. Default is `true`. (TBD: is `auto` needed?)
+- `lapacke`: `true` or `false`. Default is `false`.
+
+The search order can be controlled by explicitly specifying it:
+
+```meson
+# Specify what implementations to look for, and in what order
+blas_dep = dependency('mkl', 'openblas', 'blis', 'atlas', 'netlib')
+lapack_dep = dependency('mkl', 'openblas', 'atlas', 'netlib')
+
+# You can also add the generic BLAS or LAPACK as a fallback, this may help
+# portability
+blas_dep = dependency('openblas', 'mkl', 'blis', 'netlib', 'blas')
+lapack_dep = dependency('openblas', 'mkl', 'atlas', 'netlib')
+```
+
+Note that it is not necessary to specify both `'lapack'` and `'blas'` for the
+same build target, because LAPACK itself depends on BLAS. (TBD: is this okay
+for libflame?).
+
+
+### Specific BLAS and LAPACK implementations
+
+#### OpenBLAS
+
+The `version` and `interface` keywords may be passed to request the use of a
+specific version and interface, correspondingly:
+
+```meson
+openblas_dep = dependency('openblas', version : '>=0.3.21', interface : 'ilp64')
+```
+
+If OpenBLAS is installed in a nonstandard location *with* pkg-config files,
+you can set `PKG_CONFIG_PATH`. Alternatively, you can specify
+`openblas_includedir` and `openblas_librarydir` in your native or cross machine
+file, this works also if OpenBLAS is installed *without* pkg-config files:
+
+```ini
+[properties]
+openblas_includedir = '/path/to/include_dir'  # should contain openblas_config.h
+openblas_librarydir = '/path/to/library_dir'
+```
+
+Note that OpenBLAS can be built with either pthreads or OpenMP. Information on
+this is not available through Meson.
+
+#### MKL
+
+```meson
+mkl_dep = dependency('mkl', version : '>=2021.1.0', interface : 'lp64', threading: 'seq')
+```
+
+#### Netlib
+
+TODO
+
+#### ATLAS
+
+TODO
+
+#### BLIS
+
+TODO
+
+### libflame
+
+TODO
+
+### Accelerate
+
+TODO
+
+
 ## Blocks
 
 Enable support for Clang's blocks extension.
