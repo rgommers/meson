@@ -17,6 +17,8 @@ from .base import (
         ExternalLibrary, DependencyException, DependencyMethods,
         BuiltinDependency, SystemDependency, get_leaf_external_dependencies)
 from .detect import find_external_dependency, get_dep_identifier, packages, _packages_accept_language
+from .blas_lapack import openblas_factory
+
 
 __all__ = [
     'Dependency',
@@ -252,6 +254,9 @@ packages.defaults.update({
     'qt4': 'qt',
     'qt5': 'qt',
     'qt6': 'qt',
+
+    # From blas_lapack:
+    'openblas': openblas_factory,
 })
 _packages_accept_language.update({
     'hdf5',
