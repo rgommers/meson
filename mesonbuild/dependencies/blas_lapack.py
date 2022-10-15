@@ -13,8 +13,6 @@
 # limitations under the License.
 
 from pathlib import Path
-import functools
-import os
 import re
 import typing as T
 
@@ -22,13 +20,10 @@ from .. import mlog
 from .. import mesonlib
 
 from .base import DependencyMethods, SystemDependency
-from .base import DependencyException
-from .cmake import CMakeDependency
-from .factory import factory_methods
+from .factory import DependencyFactory
 
 if T.TYPE_CHECKING:
-    from ..environment import Environment, MachineChoice
-    from .factory import DependencyGenerator
+    from ..environment import Environment
 
 
 # TODO: how to select BLAS interface layer (LP64, ILP64)?
@@ -51,30 +46,10 @@ if T.TYPE_CHECKING:
 # NOTE: we ignore static libraries for now
 
 
-@factory_methods({DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE, DependencyMethods.SYSTEM})
-def openblas_factory(env: 'Environment', for_machine: 'MachineChoice',
-                  kwargs: T.Dict[str, T.Any],
-                  methods: T.List[DependencyMethods]) -> T.List['DependencyGenerator']:
-    candidates: T.List['DependencyGenerator'] = []
-
-    if DependencyMethods.CMAKE in methods:
-        candidates.append(functools.partial(
-            CMakeDependency, 'OpenBLAS', env, kwargs))
-
-    if DependencyMethods.SYSTEM in methods:
-        candidates.append(functools.partial(OpenBLASDependencySystem, 'openblas', env, kwargs))
-
-    return candidates
-
-
-class OpenBLASDependencySystem(SystemDependency):
+class OpenBLASSystemDependency(SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('0.64.0', '')
-
-        self.env = environment
-        self.name = 'openblas'
-        self.is_found = False
 
         # First, look for paths specified in a machine file
         props = self.env.properties[self.for_machine].properties
@@ -83,19 +58,41 @@ class OpenBLASDependencySystem(SystemDependency):
 
         # Then look in standard directories by attempting to link
         if not self.is_found:
-            extra_dirs = []  # TODO - for Windows may be, e.g.: Path('C:/opt/openblas/if_32/64/')
-            link_arg = self.clib_compiler.find_library('openblas', self.env, extra_dirs)
-            h = self.clib_compiler.has_header('openblas_config.h', '', self.env, dependencies=[self])
-            if link_arg and h[0]:
-                self.is_found = True
-                self.link_args += link_arg
+            # TODO - for Windows may be, e.g.: Path('C:/opt/openblas/if_32/64/')
+            extra_libdirs: T.List[str] = []
+            self.detect(extra_libdirs)
 
         if self.is_found:
             self.version = self.detect_openblas_version()
 
         self.run_check()
 
+    def detect(self, lib_dirs: T.Optional[T.List[str]] = None, inc_dirs: T.Optional[T.List[str]] = None) -> None:
+        if lib_dirs is None:
+            lib_dirs = []
+        if inc_dirs is None:
+            inc_dirs = []
+
+        link_arg = self.clib_compiler.find_library('openblas', self.env, lib_dirs)
+        incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
+        found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
+                                                        dependencies=[self], extra_args=incdir_args)
+        if link_arg and found_header:
+            self.is_found = True
+            if lib_dirs:
+                # `link_arg` will be either `[-lopenblas]` or `[/path_to_sharedlib/libopenblas.so]`
+                # is the latter behavior expected?
+                found_libdir = Path(link_arg[0]).parent
+                self.link_args += [f'-L{found_libdir}', '-lopenblas']
+            else:
+                self.link_args += link_arg
+
+            # has_header does not return a path with where the header was
+            # found, so add all provided include directories
+            self.compile_args += incdir_args
+
     def detect_openblas_machine_file(self, props: dict) -> None:
+        # TBD: do we need to support multiple extra dirs?
         incdir = props.get('openblas_includedir')
         assert incdir is None or isinstance(incdir, str)
         libdir = props.get('openblas_librarydir')
@@ -103,30 +100,28 @@ class OpenBLASDependencySystem(SystemDependency):
 
         if incdir and libdir:
             self.is_found = True
-            inc_dir = Path(incdir)
-            lib_dir = Path(libdir)
-            if not inc_dir.is_absolute() or not lib_dir.is_absolute():
-                # TODO: why doesn't this fail the build? It gets caught, how to avoid?
-                raise DependencyException('Paths given for openblas_includedir and openblas_librarydir in machine file must be absolute')
+            if not Path(incdir).is_absolute() or not Path(libdir).is_absolute():
+                raise mesonlib.MesonException('Paths given for openblas_includedir and '
+                                              'openblas_librarydir in machine file must be absolute')
         elif incdir or libdir:
-            raise DependencyException('Both openblas_includedir *and* openblas_librarydir have to be set in your machine file (one is not enough)')
+            raise mesonlib.MesonException('Both openblas_includedir *and* openblas_librarydir '
+                                          'have to be set in your machine file (one is not enough)')
         else:
-            # We only call this method if incdir or libdir were found
-            raise RuntimeError('Meson internal issue during openblas dependency detection')
+            raise mesonlib.MesonBugException('issue with openblas dependency detection, should not '
+                                             'be possible to reach this else clause')
 
-        # Now we have the absolute paths we need - use them:
-        self.link_args += [f'-L{lib_dir}', '-lopenblas', f'-I{inc_dir}']
+        self.detect([libdir], [incdir])
 
     def detect_openblas_version(self) -> str:
         v, _ = self.clib_compiler.get_define('OPENBLAS_VERSION', '#include <openblas_config.h>', self.env, [], [self])
 
         m = re.search(r'\d+(?:\.\d+)+', v)
         if not m:
-            mlog.debug(f'Failed to extract openblas version information')
-            return '0.0.0'
+            mlog.debug('Failed to extract openblas version information')
+            return None
         return m.group(0)
 
-    def run_check(self):
+    def run_check(self) -> None:
         # See https://github.com/numpy/numpy/blob/main/numpy/distutils/system_info.py#L2319
         # Symbols to check:
         #    for BLAS LP64: dgemm  # note that numpy.distutils checks nothing here
@@ -134,3 +129,11 @@ class OpenBLASDependencySystem(SystemDependency):
         #    for LAPACK LP64: zungqr_
         #    for LAPACK ILP64: zungqr_, LAPACKE_zungqr
         pass
+
+
+openblas_factory = DependencyFactory(
+    'openblas',
+    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
+    cmake_name='OpenBLAS',
+    system_class=OpenBLASSystemDependency,
+)
