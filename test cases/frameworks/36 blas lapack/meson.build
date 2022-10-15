@@ -5,9 +5,9 @@ if not openblas_dep.found()
   error('MESON_SKIP_TEST: OpenBLAS library not available')
 endif
 
-#c_exe = executable('blas_c', 'main.c',
-#  dependencies: [openblas_dep])
-#test('openblas_dep', c_exe, timeout: 30)
+c_exe = executable('cblas_lapack_c', 'cblas_lapack.c',
+  dependencies: [openblas_dep])
+test('openblas_dep', c_exe, timeout: 30)
 
 if add_languages('fortran', required: false)
   f_exe = executable('openblas_fortran', 'main.f90',
