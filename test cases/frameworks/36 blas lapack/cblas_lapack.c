@@ -1,16 +1,38 @@
-// Adapted from a test in Spack for OpenBLAS
+// Basic BLAS/LAPACK example adapted from a test in Spack for OpenBLAS
+// Name mangling adapted from NumPy's npy_cblas.h
 
 #include <cblas.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef NO_APPEND_FORTRAN
+#define BLAS_FORTRAN_SUFFIX
+#else
+#define BLAS_FORTRAN_SUFFIX _
+#endif
+
+#ifndef BLAS_SYMBOL_PREFIX
+#define BLAS_SYMBOL_PREFIX
+#endif
+
+#ifndef BLAS_SYMBOL_SUFFIX
+#define BLAS_SYMBOL_SUFFIX
+#endif
+
+#define BLAS_FUNC_CONCAT(name,prefix,suffix,suffix2) prefix ## name ## suffix ## suffix2
+#define BLAS_FUNC_EXPAND(name,prefix,suffix,suffix2) BLAS_FUNC_CONCAT(name,prefix,suffix,suffix2)
+
+#define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,,BLAS_SYMBOL_SUFFIX)
+#define BLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,BLAS_FORTRAN_SUFFIX,BLAS_SYMBOL_SUFFIX)
+
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void dgesv_(int *n, int *nrhs, double *a, int *lda, int *ipivot, double *b,
-            int *ldb, int *info);
+void BLAS_FUNC(dgesv)(int *n, int *nrhs, double *a, int *lda, int *ipivot, double *b,
+                      int *ldb, int *info);
 
 #ifdef __cplusplus
 }
@@ -25,9 +47,9 @@ int main(void) {
     int n_elem = 9;
     double norm;
 
-    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
+    CBLAS_FUNC(cblas_dgemm)(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
                 2, C, 3);
-    norm = cblas_dnrm2(n_elem, C, incx) - 28.017851;
+    norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, C, incx) - 28.017851;
 
     if (fabs(norm) < 1e-5) {
         printf("OK: CBLAS result using dgemm and dnrm2 as expected\n");
@@ -46,14 +68,14 @@ int main(void) {
     int lda = 3;
     int ldb = 3;
 
-    dgesv_(&n, &nrhs, &m[0], &lda, ipiv, &x[0], &ldb, &info);
+    BLAS_FUNC(dgesv)(&n, &nrhs, &m[0], &lda, ipiv, &x[0], &ldb, &info);
     n_elem = 3;
-    norm = cblas_dnrm2(n_elem, x, incx) - 4.255715;
+    norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, x, incx) - 4.255715;
 
     if (fabs(norm) < 1e-5) {
-        printf("OK: LAPACK result using dgesv_ as expected\n");
+        printf("OK: LAPACK result using dgesv as expected\n");
     } else {
-        fprintf(stderr, "LAPACK result using dgesv_ incorrect: %f\n", norm);
+        fprintf(stderr, "LAPACK result using dgesv incorrect: %f\n", norm);
         exit(EXIT_FAILURE);
     }
 
