@@ -20,7 +20,9 @@ from .. import mlog
 from .. import mesonlib
 
 from .base import DependencyMethods, SystemDependency
+from .cmake import CMakeDependency
 from .factory import DependencyFactory
+from .pkgconfig import PkgConfigDependency
 
 if T.TYPE_CHECKING:
     from ..environment import Environment
@@ -162,7 +164,7 @@ mkl-dynamic-ilp64-iomp.pc  mkl-dynamic-lp64-iomp.pc  mkl-static-ilp64-iomp.pc  m
 mkl-dynamic-ilp64-seq.pc   mkl-dynamic-lp64-seq.pc   mkl-static-ilp64-seq.pc   mkl-static-lp64-seq.pc
 
 $ pkg-config --libs mkl-dynamic-ilp64-seq
--L/opt/intel/oneapi/mkl/latest/lib/pkgconfig/../../lib/intel64 -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl 
+-L/opt/intel/oneapi/mkl/latest/lib/pkgconfig/../../lib/intel64 -lmkl_intel_ilp64 -lmkl_sequential -lmkl_core -lpthread -lm -ldl
 $ pkg-config --cflags mkl-dynamic-ilp64-seq
 -DMKL_ILP64 -I/opt/intel/oneapi/mkl/latest/lib/pkgconfig/../../include
 
@@ -231,10 +233,36 @@ libraries will be using the gfortran ABI. See the `use-g77-abi` option in SciPy'
 """
 
 
-class OpenBLASSystemDependency(SystemDependency):
+class OpenBLASMixin():
+    def parse_modules(self, kwargs: T.Dict[str, T.Any]) -> None:
+        modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
+        valid_modules = ['interface: lp64', 'interface: ilp64']
+        for module in modules:
+            if module not in valid_modules:
+                raise mesonlib.MesonException(f'Unknown modules argument: {module}')
+
+        self.interface = ''
+        interface = [s for s in modules if s.startswith('interface')]
+        if interface:
+            if len(interface) > 1:
+                raise mesonlib.MesonException(f'Only one interface must be specified, found: {interface}')
+            self.interface = interface[0].split(' ')[1]
+
+    def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
+        # TODO: what's going on with `get_variable`? Need to pick from
+        # cmake/pkgconfig/internal/..., but not system?
+        varname = kwargs['pkgconfig']
+        if varname == 'interface':
+            return self.interface
+        return super().get_variable(kwargs)  # FIXME: not quite allowed by Mypy
+
+
+class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('0.64.0', '')
+
+        self.parse_modules(kwargs)
 
         # First, look for paths specified in a machine file
         props = self.env.properties[self.for_machine].properties
@@ -258,23 +286,30 @@ class OpenBLASSystemDependency(SystemDependency):
         if inc_dirs is None:
             inc_dirs = []
 
-        link_arg = self.clib_compiler.find_library('openblas', self.env, lib_dirs)
-        incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
-        found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
-                                                        dependencies=[self], extra_args=incdir_args)
-        if link_arg and found_header:
-            self.is_found = True
-            if lib_dirs:
-                # `link_arg` will be either `[-lopenblas]` or `[/path_to_sharedlib/libopenblas.so]`
-                # is the latter behavior expected?
-                found_libdir = Path(link_arg[0]).parent
-                self.link_args += [f'-L{found_libdir}', '-lopenblas']
-            else:
-                self.link_args += link_arg
+        if self.interface == 'lp64':
+            libnames = ['openblas']
+        elif self.interface == 'ilp64':
+            libnames = ['openblas64_', 'openblas_ilp64', 'openblas']
 
-            # has_header does not return a path with where the header was
-            # found, so add all provided include directories
-            self.compile_args += incdir_args
+        for libname in libnames:
+            link_arg = self.clib_compiler.find_library(libname, self.env, lib_dirs)
+            incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
+            found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
+                                                            dependencies=[self], extra_args=incdir_args)
+            if link_arg and found_header:
+                self.is_found = True
+                if lib_dirs:
+                    # `link_arg` will be either `[-lopenblas]` or `[/path_to_sharedlib/libopenblas.so]`
+                    # is the latter behavior expected?
+                    found_libdir = Path(link_arg[0]).parent
+                    self.link_args += [f'-L{found_libdir}', f'-l{libname}']
+                else:
+                    self.link_args += link_arg
+
+                # has_header does not return a path with where the header was
+                # found, so add all provided include directories
+                self.compile_args += incdir_args
+                return None
 
     def detect_openblas_machine_file(self, props: dict) -> None:
         # TBD: do we need to support multiple extra dirs?
@@ -307,6 +342,7 @@ class OpenBLASSystemDependency(SystemDependency):
         return m.group(0)
 
     def run_check(self) -> None:
+        # TODO! verify that we've found the right LP64/ILP64 interface
         # See https://github.com/numpy/numpy/blob/main/numpy/distutils/system_info.py#L2319
         # Symbols to check:
         #    for BLAS LP64: dgemm  # note that numpy.distutils checks nothing here
@@ -316,9 +352,24 @@ class OpenBLASSystemDependency(SystemDependency):
         pass
 
 
+class OpenBLASPkgConfigDependency(OpenBLASMixin, PkgConfigDependency):
+    def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
+        self.parse_modules(kwargs)
+        super().__init__(name, env, kwargs)
+
+
+class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
+    def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any],
+                 language: T.Optional[str] = None, force_use_global_compilers: bool = False) -> None:
+        self.parse_modules(kwargs)
+        # TODO: support ILP64
+        super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
+
+
 openblas_factory = DependencyFactory(
     'openblas',
     [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
-    cmake_name='OpenBLAS',
     system_class=OpenBLASSystemDependency,
+    pkgconfig_class=OpenBLASPkgConfigDependency,
+    cmake_class=OpenBLASCMakeDependency,
 )
