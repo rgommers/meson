@@ -286,6 +286,10 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
         if inc_dirs is None:
             inc_dirs = []
 
+        # TODO: add the default symbol suffix for ilp64 ("64_"), check that
+        # symbols are present in the library, and then store a validated symbol
+        # suffix. Also check for availability of CBLAS interface (`dgemm_` -> `cblas_dgemm`)
+        # See `self.run_check` below.
         if self.interface == 'lp64':
             libnames = ['openblas']
         elif self.interface == 'ilp64':

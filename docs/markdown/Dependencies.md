@@ -367,7 +367,20 @@ The `version` and `interface` keywords may be passed to request the use of a
 specific version and interface, correspondingly:
 
 ```meson
-openblas_dep = dependency('openblas', version : '>=0.3.21', interface : 'ilp64')
+openblas_dep = dependency('openblas',
+  version : '>=0.3.21',
+  language: 'c',          # can be c/cpp/fortran
+  modules: [
+    'interface: ilp64',   # can be lp64 or ilp64 (or auto?)
+    'symbol-suffix: 64_', # check/auto-detect? default to 64_ or no suffix?
+    'cblas',
+  ]
+)
+
+# Query properties as needed:
+has_cblas = openblas.get_variable('cblas')
+is_ilp64 = openblas_dep.get_variable('interface') == 'ilp64'
+blas_symbol_suffix = openblas_dep.get_variable('symbol-suffix')
 ```
 
 If OpenBLAS is installed in a nonstandard location *with* pkg-config files,
