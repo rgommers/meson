@@ -317,7 +317,7 @@ These dependencies can never be found for non-OSX hosts.
 
 ## BLAS and LAPACK
 
-*(added 0.64.0)*
+*(added 1.1.0)*
 
 Enables compiling and linking against BLAS and LAPACK libraries. BLAS and
 LAPACK are generic APIs, which can be provided by a number of different
@@ -374,6 +374,7 @@ openblas_dep = dependency('openblas',
     'interface: ilp64',   # can be lp64 or ilp64 (or auto?)
     'symbol-suffix: 64_', # check/auto-detect? default to 64_ or no suffix?
     'cblas',
+    'lapack',             # OpenBLAS can be built without LAPACK support
   ]
 )
 

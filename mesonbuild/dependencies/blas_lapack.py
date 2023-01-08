@@ -47,6 +47,8 @@ NOTE: we ignore static libraries for now
 Other Notes:
 
 - OpenBLAS can be built with NOFORTRAN, in that case it's CBLAS + f2c'd LAPACK
+- OpenBLAS can be built without LAPACK support, Arch Linux currently does this
+  (see https://github.com/scipy/scipy/issues/17465)
 - OpenBLAS library can be renamed with an option in its Makefile
 - Build options:
     - conda-forge: https://github.com/conda-forge/openblas-feedstock/blob/49ca08fc9d1ff220804aa9b894b9a6fe5db45057/recipe/conda_build_config.yaml
