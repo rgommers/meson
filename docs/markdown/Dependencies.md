@@ -401,12 +401,34 @@ this is not available through Meson.
 #### MKL
 
 ```meson
-mkl_dep = dependency('mkl', version : '>=2021.1.0', interface : 'lp64', threading: 'seq')
+mkl_dep = dependency('mkl',
+  version: '>=2021.1.0',
+  modules: [
+    interface: 'lp64',
+    threading: 'seq'
+  ]
+)
 ```
 
-#### Netlib
+#### Netlib BLAS and LAPACK
 
-TODO
+```meson
+netlib_dep = dependency('netlib')  # both BLAS and LAPACK
+
+netlib_blas_dep = dependency('netlib',
+  version: '>=3.9.0',
+  modules: ['blas']
+)
+netlib_lapack_dep = dependency('netlib',
+  version: '>=3.9.0',
+  modules : ['lapack']
+)
+```
+
+Note that this dependency will look for `libblas` and `liblapack`. No attempt is made
+to enforce that they're the original Netlib reference libraries; if another library
+is built with the same name, it's assumed that the APIs match.
+
 
 #### ATLAS
 
