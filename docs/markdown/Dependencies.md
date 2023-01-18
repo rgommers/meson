@@ -404,8 +404,9 @@ this is not available through Meson.
 mkl_dep = dependency('mkl',
   version: '>=2021.1.0',
   modules: [
-    interface: 'lp64',
-    threading: 'seq'
+    interface: 'lp64',   # options are 'lp64' or 'ilp64'
+    threading: 'seq',    # options are 'seq' or 'omp'
+    library: 'dynamic',  # options are 'dynamic' or 'static'
   ]
 )
 ```
@@ -428,6 +429,24 @@ netlib_lapack_dep = dependency('netlib',
 Note that this dependency will look for `libblas` and `liblapack`. No attempt is made
 to enforce that they're the original Netlib reference libraries; if another library
 is built with the same name, it's assumed that the APIs match.
+
+
+#### ArmPL
+
+```meson
+armpl_dep = dependency('armpl',
+  version: '>=22.1',
+  modules: [
+    interface: 'lp64',
+    threading: 'seq',
+    library: 'dynamic',
+  ]
+)
+```
+
+The options for the `interface`, `threading` and `library` modules are the same
+as for MKL.
+
 
 
 #### ATLAS

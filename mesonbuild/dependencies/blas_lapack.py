@@ -232,6 +232,33 @@ $ ldd build-install/lib/python3.10/site-packages/scipy/linalg/_flapack.cpython-3
 
 Also need to remember that MKL uses a g77 ABI (Accelerate too), while OpenBLAS and most other BLAS
 libraries will be using the gfortran ABI. See the `use-g77-abi` option in SciPy's meson_options.txt.
+
+ArmPL
+-----
+
+Pkg-config file names for ArmPL to use (from https://github.com/spack/spack/pull/34979#discussion_r1073213319):
+
+    armpl-dynamic-ilp64-omp             armpl-Fortran-static-ilp64-omp
+    armpl-dynamic-ilp64-omp.pc          armpl-Fortran-static-ilp64-omp.pc
+    armpl-dynamic-ilp64-seq             armpl-Fortran-static-ilp64-seq
+    armpl-dynamic-ilp64-seq.pc          armpl-Fortran-static-ilp64-seq.pc
+    armpl-dynamic-lp64-omp              armpl-Fortran-static-lp64-omp
+    armpl-dynamic-lp64-omp.pc           armpl-Fortran-static-lp64-omp.pc
+    armpl-dynamic-lp64-seq              armpl-Fortran-static-lp64-seq
+    armpl-dynamic-lp64-seq.pc           armpl-Fortran-static-lp64-seq.pc
+    armpl-Fortran-dynamic-ilp64-omp     armpl-static-ilp64-omp
+    armpl-Fortran-dynamic-ilp64-omp.pc  armpl-static-ilp64-omp.pc
+    armpl-Fortran-dynamic-ilp64-seq     armpl-static-ilp64-seq
+    armpl-Fortran-dynamic-ilp64-seq.pc  armpl-static-ilp64-seq.pc
+    armpl-Fortran-dynamic-lp64-omp      armpl-static-lp64-omp
+    armpl-Fortran-dynamic-lp64-omp.pc   armpl-static-lp64-omp.pc
+    armpl-Fortran-dynamic-lp64-seq      armpl-static-lp64-seq
+    armpl-Fortran-dynamic-lp64-seq.pc   armpl-static-lp64-seq.pc
+
+Note that as of Jan'23, ArmPL ships the files without a `.pc` extension (that
+will hopefully be fixed), and Spack renames then so adds the `.pc` copies of
+the original files.
+
 """
 
 
