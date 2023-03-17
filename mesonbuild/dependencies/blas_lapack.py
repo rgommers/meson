@@ -259,6 +259,39 @@ Note that as of Jan'23, ArmPL ships the files without a `.pc` extension (that
 will hopefully be fixed), and Spack renames then so adds the `.pc` copies of
 the original files.
 
+Apple Accelerate
+----------------
+
+In macOS >=13.3, two LP64 and one ILP64 build of vecLib are shipped. Due to
+compatibility, the legacy interfaces (providing LAPACK 3.2.1) will be used by
+default.  To use the new interfaces (providing LAPACK 3.9.1), including ILP64,
+it is necessary to set some #defines before including Accelerate / vecLib headers:
+
+- `-DACCELERATE_NEW_LAPACK`: use the new interfaces
+- `-DACCELERATE_LAPACK_ILP64`: use new ILP64 interfaces (note this requires
+  `-DACCELERATE_NEW_LAPACK` to be set as well)
+
+The normal F77 symbols will remain as the legacy implementation.  The newer
+interfaces have separate symbols with suffixes `$NEWLAPACK` or `$NEWLAPACK$ILP64`.
+
+Example binary symbols:
+
+- `_dgemm_`: this is the legacy implementation
+- `_dgemm$NEWLAPACK`: this is the new implementation
+- `_dgemm$NEWLAPACK$ILP64`: this is the new ILP64 implementaion
+
+If you use Accelerate / vecLib headers with the above defines, you don't need
+to worry about the symbol names. They'll get aliased correctly.
+
+For headers and linker flags, check if these directories exist before using them:
+
+1. `-I/System/Library/Frameworks/vecLib.framework/Headers`,
+   flags: ['-Wl,-framework', '-Wl,Accelerate']
+2. `-I/System/Library/Frameworks/vecLib.framework/Headers`,
+   flags: ['-Wl,-framework', '-Wl,vecLib']
+
+Note that the dylib's are no longer physically present, they're provided in the
+shared linker cache.
 """
 
 

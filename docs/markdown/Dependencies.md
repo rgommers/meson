@@ -345,8 +345,8 @@ The search order can be controlled by explicitly specifying it:
 
 ```meson
 # Specify what implementations to look for, and in what order
-blas_dep = dependency('mkl', 'openblas', 'blis', 'atlas', 'netlib')
-lapack_dep = dependency('mkl', 'openblas', 'atlas', 'netlib')
+blas_dep = dependency('accelerate', 'mkl', 'openblas', 'blis', 'atlas', 'netlib')
+lapack_dep = dependency('accelerate', 'mkl', 'openblas', 'atlas', 'netlib')
 
 # You can also add the generic BLAS or LAPACK as a fallback, this may help
 # portability
@@ -463,7 +463,19 @@ TODO
 
 ### Accelerate
 
-TODO
+Supports the BLAS and LAPACK components of macOS Accelerate, also referred to
+as the vecLib framework. ILP64 support is only available on macOS 13.3 and up.
+From macOS 13.3, Accelerate ships with two different builds of 32-bit (LP64)
+BLAS and LAPACK. Meson will default to the newer of those builds, by defining
+`ACCELERATE_NEW_LAPACK`, unless `MACOS_DEPLOYMENT_TARGET` is set to a version
+lower than 13.3.
+
+```meson
+accelerate_dep = dependency('accelerate',
+  version: '>818.60',  # vecLib version (TODO: can this be determined?)
+  modules: [interface: 'lp64']
+)
+```
 
 
 ## Blocks
