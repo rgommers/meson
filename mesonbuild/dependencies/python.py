@@ -271,6 +271,18 @@ class PythonSystemDependency(SystemDependency, _PythonDependencyBase):
                         libpath = Path(f'python{vernum}.dll')
                 else:
                     libpath = Path('libs') / f'python{vernum}.lib'
+                    # For a debug build, pyconfig.h forces linking with
+                    # pythonX_d.lib (see meson#10776). This cannot be avoided
+                    # and won't work unless we also have a debug build of
+                    # Python itself. So error out here.
+                    buildtype = self.env.coredata.get_option(mesonlib.OptionKey('buildtype'))
+                    assert isinstance(buildtype, str)
+                    debug = self.env.coredata.get_option(mesonlib.OptionKey('debug'))
+                    is_debug_build = debug or buildtype.startswith('debug')
+                    if is_debug_build and not self.variables.get('Py_DEBUG'):
+                        msg = "Using a debug build type with MSVC or an MSVC-compatible compiler is " \
+                              "only supported if the Python interpreter is also a debug build."
+                        mlog.warning(msg)
             # base_prefix to allow for virtualenvs.
             lib = Path(self.variables.get('base_prefix')) / libpath
         elif self.platform == 'mingw':
