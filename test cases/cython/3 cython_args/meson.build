@@ -1,7 +1,6 @@
 project('cython_args', ['cython', 'c'])
 
-pymod = import('python')
-python = pymod.find_installation('python3')
+python = import('python').find_installation('python3')
 python_dep = python.dependency()
 if not python_dep.found()
   error('MESON_SKIP_TEST: Python library not found.')
@@ -12,9 +11,9 @@ mod = python.extension_module(
   files('cythonargs.pyx'),
   cython_args: [
     '--compile-time-env',
-    'VALUE=1'
+    'VALUE=1',
+    '-3',
   ],
-  dependencies: [python_dep]
 )
 
 test(
