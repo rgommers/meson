@@ -1,7 +1,12 @@
 project(
   'generated cython sources',
   ['cython'],
+  default_options : ['buildtype=release'],
 )
+
+if meson.backend() != 'ninja'
+  error('MESON_SKIP_TEST: Ninja backend required')
+endif
 
 fs = import('fs')
 py3 = import('python').find_installation('python3')
