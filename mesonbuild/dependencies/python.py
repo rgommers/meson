@@ -13,7 +13,7 @@
 # limitations under the License.
 from __future__ import annotations
 
-import functools, json, os
+import functools, json, os, textwrap
 from pathlib import Path
 import typing as T
 
@@ -280,9 +280,12 @@ class PythonSystemDependency(SystemDependency, _PythonDependencyBase):
                     debug = self.env.coredata.get_option(mesonlib.OptionKey('debug'))
                     is_debug_build = debug or buildtype.startswith('debug')
                     if is_debug_build and not self.variables.get('Py_DEBUG'):
-                        msg = "Using a debug build type with MSVC or an MSVC-compatible compiler is " \
-                              "only supported if the Python interpreter is also a debug build."
-                        mlog.warning(msg)
+                        mlog.warning(textwrap.dedent('''\
+                            Using a debug build type with MSVC or an MSVC-compatible compiler
+                            when the Python interpreter is not also a debug build will almost
+                            certainly result in a failed build. Prefer using a release build
+                            type or a debug Python interpreter.
+                            '''))
             # base_prefix to allow for virtualenvs.
             lib = Path(self.variables.get('base_prefix')) / libpath
         elif self.platform == 'mingw':
