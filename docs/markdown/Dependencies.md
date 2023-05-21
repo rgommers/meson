@@ -317,7 +317,7 @@ These dependencies can never be found for non-OSX hosts.
 
 ## BLAS and LAPACK
 
-*(added 1.1.0)*
+*(added 1.2.0)*
 
 Enables compiling and linking against BLAS and LAPACK libraries. BLAS and
 LAPACK are generic APIs, which can be provided by a number of different
@@ -414,21 +414,16 @@ mkl_dep = dependency('mkl',
 #### Netlib BLAS and LAPACK
 
 ```meson
-netlib_dep = dependency('netlib')  # both BLAS and LAPACK
-
-netlib_blas_dep = dependency('netlib',
-  version: '>=3.9.0',
-  modules: ['blas']
-)
-netlib_lapack_dep = dependency('netlib',
-  version: '>=3.9.0',
-  modules : ['lapack']
-)
+netlib_blas_dep = dependency('netlib-blas', version: '>=3.9.0')
+netlib_lapack_dep = dependency('netlib-lapack', version: '>=3.9.0')
 ```
 
-Note that this dependency will look for `libblas` and `liblapack`. No attempt is made
+Note that this dependency will look for `libblas` or `liblapack`. No attempt is made
 to enforce that they're the original Netlib reference libraries; if another library
 is built with the same name, it's assumed that the APIs match.
+
+TODO: the Netlib BLAS library typically ships CBLAS as a separate library and a separate
+      cblas.pc file.
 
 
 #### ArmPL

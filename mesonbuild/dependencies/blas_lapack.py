@@ -439,3 +439,17 @@ openblas_factory = DependencyFactory(
     pkgconfig_class=OpenBLASPkgConfigDependency,
     cmake_class=OpenBLASCMakeDependency,
 )
+
+
+class NetlibPkgConfigDependency(PkgConfigDependency):
+    def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
+        # TODO: add 'cblas'
+        super().__init__('blas', env, kwargs)
+
+
+netlib_factory = DependencyFactory(
+    'netlib-blas',
+    [DependencyMethods.PKGCONFIG],  #, DependencyMethods.SYSTEM],
+    #system_class=NetlibSystemDependency,
+    pkgconfig_class=NetlibPkgConfigDependency,
+)
