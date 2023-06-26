@@ -316,7 +316,7 @@ class OpenBLASMixin():
         varname = kwargs['pkgconfig']
         if varname == 'interface':
             return self.interface
-        return super().get_variable(kwargs)  # FIXME: not quite allowed by Mypy
+        return super().get_variable(**kwargs)
 
 
 class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
