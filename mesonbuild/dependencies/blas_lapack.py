@@ -448,9 +448,59 @@ class NetlibPkgConfigDependency(PkgConfigDependency):
         super().__init__('blas', env, kwargs)
 
 
+class AccelerateSystemDependency(SystemDependency):  # TODO: add LP64/ILP64 mixin
+    """
+    Accelerate is always installed on macOS, and not available on other OSes.
+    We only support using Accelerate on macOS >=13.3, where Apple shipped a
+    major update to Accelerate, fixed a lot of bugs, and bumped the LAPACK
+    version from 3.2 to 3.9. The older Accelerate version is still available,
+    and can be obtained as a standard Framework dependency with:
+
+        dependency('appleframeworks', modules : 'Accelerate')
+    """
+    def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
+        super().__init__(name, environment, kwargs)
+        self.feature_since = ('1.3.0', '')
+
+        self.parse_modules(kwargs)
+        if not self.check_macOS_recent_enough():
+            return None
+
+        self.detect()
+
+    def check_macOS_recent_enough(self) -> bool:
+        macOS13_3_or_later = False
+        if os.name == 'darwin':
+            cmd = ['xcrun', '-sdk', 'macosx', '--show-sdk-version'],
+            sdk_version = subprocess.run(cmd, capture_output=True, check=True)
+            if sdk_version >= '13.3':
+                macOS13_3_or_later = True
+        return macOS13_3_or_later
+
+    def detect(self) -> None:
+        libname = 'Accelerate'
+        link_arg = self.clib_compiler.find_framework('Accelerate', self.env)
+        found_header, _ = self.clib_compiler.has_header('<Accelerate/Accelerate.h>', '',
+                                                        self.env, dependencies=[self])
+        if link_arg and found_header:
+            self.is_found = True
+            self.compile_args += ['-DACCELERATE_NEW_LAPACK']
+            if self.interface == 'ilp64':
+                self.compile_args += ['-DACCELERATE_LAPACK_ILP64']
+
+        # TODO: check symbols
+
+
 packages['netlib-blas'] = netlib_factory = DependencyFactory(
     'netlib-blas',
     [DependencyMethods.PKGCONFIG],  #, DependencyMethods.SYSTEM],
     #system_class=NetlibSystemDependency,
     pkgconfig_class=NetlibPkgConfigDependency,
+)
+
+
+packages['accelerate'] = accelerate_factory = DependencyFactory(
+    'accelerate',
+    [DependencyMethods.SYSTEM],
+    system_class=AccelerateSystemDependency,
 )
