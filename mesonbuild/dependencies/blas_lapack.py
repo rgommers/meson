@@ -21,6 +21,7 @@ from .. import mesonlib
 
 from .base import DependencyMethods, SystemDependency
 from .cmake import CMakeDependency
+from .detect import packages
 from .factory import DependencyFactory
 from .pkgconfig import PkgConfigDependency
 
@@ -432,7 +433,7 @@ class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
         super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
 
 
-openblas_factory = DependencyFactory(
+packages['openblas'] = openblas_factory = DependencyFactory(
     'openblas',
     [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
     system_class=OpenBLASSystemDependency,
@@ -447,7 +448,7 @@ class NetlibPkgConfigDependency(PkgConfigDependency):
         super().__init__('blas', env, kwargs)
 
 
-netlib_factory = DependencyFactory(
+packages['netlib-blas'] = netlib_factory = DependencyFactory(
     'netlib-blas',
     [DependencyMethods.PKGCONFIG],  #, DependencyMethods.SYSTEM],
     #system_class=NetlibSystemDependency,

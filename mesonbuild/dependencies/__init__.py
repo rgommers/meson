@@ -236,6 +236,9 @@ packages.defaults.update({
     'libcrypto': 'misc',
     'libssl': 'misc',
 
+    # From blas_lapack:
+    'openblas': 'blas_lapack',
+
     # From platform:
     'appleframeworks': 'platform',
 
@@ -254,9 +257,6 @@ packages.defaults.update({
     'qt4': 'qt',
     'qt5': 'qt',
     'qt6': 'qt',
-
-    # From blas_lapack:
-    'openblas': openblas_factory,
 })
 _packages_accept_language.update({
     'hdf5',
