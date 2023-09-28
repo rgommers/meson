@@ -299,7 +299,7 @@ shared linker cache.
 class OpenBLASMixin():
     def parse_modules(self, kwargs: T.Dict[str, T.Any]) -> None:
         modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
-        valid_modules = ['interface: lp64', 'interface: ilp64']
+        valid_modules = ['interface: lp64', 'interface: ilp64', 'cblas', 'lapack', 'lapacke']
         for module in modules:
             if module not in valid_modules:
                 raise mesonlib.MesonException(f'Unknown modules argument: {module}')
@@ -310,6 +310,10 @@ class OpenBLASMixin():
             if len(interface) > 1:
                 raise mesonlib.MesonException(f'Only one interface must be specified, found: {interface}')
             self.interface = interface[0].split(' ')[1]
+
+        self.needs_cblas = 'cblas' in modules
+        self.needs_lapack = 'lapack' in modules
+        self.needs_lapacke = 'lapacke' in modules
 
     def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
         # TODO: what's going on with `get_variable`? Need to pick from
@@ -334,14 +338,11 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
 
         # Then look in standard directories by attempting to link
         if not self.is_found:
-            # TODO - for Windows may be, e.g.: Path('C:/opt/openblas/if_32/64/')
             extra_libdirs: T.List[str] = []
             self.detect(extra_libdirs)
 
         if self.is_found:
             self.version = self.detect_openblas_version()
-
-        self.run_check()
 
     def detect(self, lib_dirs: T.Optional[T.List[str]] = None, inc_dirs: T.Optional[T.List[str]] = None) -> None:
         if lib_dirs is None:
@@ -349,14 +350,10 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
         if inc_dirs is None:
             inc_dirs = []
 
-        # TODO: add the default symbol suffix for ilp64 ("64_"), check that
-        # symbols are present in the library, and then store a validated symbol
-        # suffix. Also check for availability of CBLAS interface (`dgemm_` -> `cblas_dgemm`)
-        # See `self.run_check` below.
         if self.interface == 'lp64':
             libnames = ['openblas']
         elif self.interface == 'ilp64':
-            libnames = ['openblas64_', 'openblas_ilp64', 'openblas']
+            libnames = ['openblas64', 'openblas_ilp64', 'openblas']
 
         for libname in libnames:
             link_arg = self.clib_compiler.find_library(libname, self.env, lib_dirs)
@@ -364,6 +361,8 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
             found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
                                                             dependencies=[self], extra_args=incdir_args)
             if link_arg and found_header:
+                if not self.check_symbols(link_arg):
+                    continue
                 self.is_found = True
                 if lib_dirs:
                     # `link_arg` will be either `[-lopenblas]` or `[/path_to_sharedlib/libopenblas.so]`
@@ -408,15 +407,27 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
             return None
         return m.group(0)
 
-    def run_check(self) -> None:
-        # TODO! verify that we've found the right LP64/ILP64 interface
-        # See https://github.com/numpy/numpy/blob/main/numpy/distutils/system_info.py#L2319
-        # Symbols to check:
-        #    for BLAS LP64: dgemm  # note that numpy.distutils checks nothing here
-        #    for BLAS ILP64: dgemm_, cblas_dgemm
-        #    for LAPACK LP64: zungqr_
-        #    for LAPACK ILP64: zungqr_, LAPACKE_zungqr
-        pass
+    def check_symbols(self, compile_args) -> None:
+        # verify that we've found the right LP64/ILP64 interface
+        symbols = ['dgemm_']
+        if self.needs_cblas:
+            symbols += ['cblas_dgemm']
+        if self.needs_lapack:
+            symbols += ['zungqr_']
+        if self.needs_lapacke:
+            symbols += ['LAPACKE_zungqr']
+
+        suffix = '' if self.interface == 'lp64' else '64_'
+        prototypes = "".join(f"void {symbol}{suffix}();\n" for symbol in symbols)
+        calls = "  ".join(f"{symbol}{suffix}();\n" for symbol in symbols)
+        code = (f"{prototypes}"
+                 "int main(int argc, const char *argv[])\n"
+                 "{\n"
+                f"  {calls}"
+                 "  return 0;\n"
+                 "}"
+                )
+        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
 
 
 class OpenBLASPkgConfigDependency(OpenBLASMixin, PkgConfigDependency):
@@ -435,7 +446,8 @@ class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
 
 packages['openblas'] = openblas_factory = DependencyFactory(
     'openblas',
-    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
+    #[DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
+    [DependencyMethods.SYSTEM],#, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
     system_class=OpenBLASSystemDependency,
     pkgconfig_class=OpenBLASPkgConfigDependency,
     cmake_class=OpenBLASCMakeDependency,
