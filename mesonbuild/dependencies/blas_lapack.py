@@ -444,16 +444,6 @@ class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
         super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
 
 
-packages['openblas'] = openblas_factory = DependencyFactory(
-    'openblas',
-    #[DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
-    [DependencyMethods.SYSTEM],#, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
-    system_class=OpenBLASSystemDependency,
-    pkgconfig_class=OpenBLASPkgConfigDependency,
-    cmake_class=OpenBLASCMakeDependency,
-)
-
-
 class NetlibPkgConfigDependency(PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         # TODO: add 'cblas'
@@ -501,6 +491,16 @@ class AccelerateSystemDependency(SystemDependency):  # TODO: add LP64/ILP64 mixi
                 self.compile_args += ['-DACCELERATE_LAPACK_ILP64']
 
         # TODO: check symbols
+
+
+packages['openblas'] = openblas_factory = DependencyFactory(
+    'openblas',
+    #[DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
+    [DependencyMethods.SYSTEM],#, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
+    system_class=OpenBLASSystemDependency,
+    pkgconfig_class=OpenBLASPkgConfigDependency,
+    cmake_class=OpenBLASCMakeDependency,
+)
 
 
 packages['netlib-blas'] = netlib_factory = DependencyFactory(
