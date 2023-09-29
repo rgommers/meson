@@ -1,5 +1,6 @@
 project('test blas and lapack', 'c')
 
+# OpenBLAS LP64 and ILP64
 openblas_dep = dependency('openblas',
   modules: [
     'interface: lp64',
@@ -8,27 +9,55 @@ openblas_dep = dependency('openblas',
   ],
   required: false,
 )
-openblas64_dep = dependency('openblas', required: false, modules: ['interface: ilp64'])
-if not openblas_dep.found() and not openblas64_dep.found()
-  error('MESON_SKIP_TEST: OpenBLAS library not available')
+openblas64_dep = dependency('openblas',
+  modules: [
+    'interface: ilp64',
+    'cblas',
+    'lapack',
+  ],
+  required: false,
+)
+
+# Accelerate LP64 and ILP64
+accelerate_dep = dependency('accelerate',
+  modules: [
+    'interface: lp64',
+    'cblas',
+    'lapack',
+  ],
+  required: false,
+)
+accelerate64_dep = dependency('accelerate',
+  modules: [
+    'interface: ilp64',
+    'cblas',
+    'lapack',
+  ],
+  required: false,
+)
+
+if not openblas_dep.found() and not openblas64_dep.found() and not accelerate_dep.found()
+  error('MESON_SKIP_TEST: no BLAS/LAPACK libraries available')
 endif
 
 deps = {
-  'lp64': openblas_dep,
-  'ilp64': openblas64_dep,
+  'openblas': openblas_dep,
+  'openblas64': openblas64_dep,
+  'accelerate': accelerate_dep,
+  'accelerate64': accelerate64_dep,
 }
 
-foreach interface, dep : deps
+foreach name, dep : deps
   if dep.found()
     blas_c_args = []
     blas_interface = dep.get_variable('interface')
     if blas_interface == 'ilp64'
       blas_c_args += '-DBLAS_SYMBOL_SUFFIX=64_'
     elif blas_interface != 'lp64'
-      error('no interface var for OpenBLAS dependency!')
+      error(f'no interface var for %name% dependency!')
     endif
 
-    c_exe = executable('cblas_lapack_c_' + interface,
+    c_exe = executable('cblas_lapack_c_' + blas_interface,
       'cblas_lapack.c',
       c_args: blas_c_args,
       dependencies: [dep]
@@ -36,7 +65,7 @@ foreach interface, dep : deps
     test('openblas_dep', c_exe, timeout: 30)
 
     if add_languages('fortran', required: false)
-      f_exe = executable('openblas_fortran_' + interface,
+      f_exe = executable('openblas_fortran_' + blas_interface,
         'main.f90',
         dependencies: [dep]
       )
