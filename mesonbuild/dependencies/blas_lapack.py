@@ -296,7 +296,7 @@ shared linker cache.
 """
 
 
-class OpenBLASMixin():
+class BLASLAPACKMixin():
     def parse_modules(self, kwargs: T.Dict[str, T.Any]) -> None:
         modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
         valid_modules = ['interface: lp64', 'interface: ilp64', 'cblas', 'lapack', 'lapacke']
@@ -315,6 +315,28 @@ class OpenBLASMixin():
         self.needs_lapack = 'lapack' in modules
         self.needs_lapacke = 'lapacke' in modules
 
+    def check_symbols(self, compile_args) -> None:
+        # verify that we've found the right LP64/ILP64 interface
+        symbols = ['dgemm_']
+        if self.needs_cblas:
+            symbols += ['cblas_dgemm']
+        if self.needs_lapack:
+            symbols += ['zungqr_']
+        if self.needs_lapacke:
+            symbols += ['LAPACKE_zungqr']
+
+        suffix = '' if self.interface == 'lp64' else '64_'
+        prototypes = "".join(f"void {symbol}{suffix}();\n" for symbol in symbols)
+        calls = "  ".join(f"{symbol}{suffix}();\n" for symbol in symbols)
+        code = (f"{prototypes}"
+                 "int main(int argc, const char *argv[])\n"
+                 "{\n"
+                f"  {calls}"
+                 "  return 0;\n"
+                 "}"
+                )
+        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
+
     def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
         # TODO: what's going on with `get_variable`? Need to pick from
         # cmake/pkgconfig/internal/..., but not system?
@@ -324,11 +346,10 @@ class OpenBLASMixin():
         return super().get_variable(**kwargs)
 
 
-class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
+class OpenBLASSystemDependency(BLASLAPACKMixin, SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
-        self.feature_since = ('0.64.0', '')
-
+        self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
 
         # First, look for paths specified in a machine file
@@ -407,50 +428,39 @@ class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
             return None
         return m.group(0)
 
-    def check_symbols(self, compile_args) -> None:
-        # verify that we've found the right LP64/ILP64 interface
-        symbols = ['dgemm_']
-        if self.needs_cblas:
-            symbols += ['cblas_dgemm']
-        if self.needs_lapack:
-            symbols += ['zungqr_']
-        if self.needs_lapacke:
-            symbols += ['LAPACKE_zungqr']
 
-        suffix = '' if self.interface == 'lp64' else '64_'
-        prototypes = "".join(f"void {symbol}{suffix}();\n" for symbol in symbols)
-        calls = "  ".join(f"{symbol}{suffix}();\n" for symbol in symbols)
-        code = (f"{prototypes}"
-                 "int main(int argc, const char *argv[])\n"
-                 "{\n"
-                f"  {calls}"
-                 "  return 0;\n"
-                 "}"
-                )
-        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
-
-
-class OpenBLASPkgConfigDependency(OpenBLASMixin, PkgConfigDependency):
+class OpenBLASPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
-        self.parse_modules(kwargs)
         super().__init__(name, env, kwargs)
+        self.feature_since = ('1.3.0', '')
+        self.parse_modules(kwargs)
+
+        if not self.check_symbols(self.link_args):
+            self.is_found = False
 
 
-class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
+class OpenBLASCMakeDependency(BLASLAPACKMixin, CMakeDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any],
                  language: T.Optional[str] = None, force_use_global_compilers: bool = False) -> None:
-        self.parse_modules(kwargs)
-        # TODO: support ILP64
+        # TODO: support ILP64. Use functools.partial(PkgConfigDependency...)
+        #       for the 3 possible names here?
         super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
+        self.feature_since = ('1.3.0', '')
+        self.parse_modules(kwargs)
+
+        if not self.check_symbols(self.link_args):
+            self.is_found = False
 
 
-class NetlibPkgConfigDependency(PkgConfigDependency):
+class NetlibPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         # TODO: add 'cblas'
         super().__init__('blas', env, kwargs)
+        self.feature_since = ('1.3.0', '')
+        self.parse_modules(kwargs)
 
 
-class AccelerateSystemDependency(SystemDependency):  # TODO: add LP64/ILP64 mixin
+class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
     """
     Accelerate is always installed on macOS, and not available on other OSes.
     We only support using Accelerate on macOS >=13.3, where Apple shipped a
@@ -463,8 +473,8 @@ class AccelerateSystemDependency(SystemDependency):  # TODO: add LP64/ILP64 mixi
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
-
         self.parse_modules(kwargs)
+
         if not self.check_macOS_recent_enough():
             return None
 
@@ -490,13 +500,14 @@ class AccelerateSystemDependency(SystemDependency):  # TODO: add LP64/ILP64 mixi
             if self.interface == 'ilp64':
                 self.compile_args += ['-DACCELERATE_LAPACK_ILP64']
 
-        # TODO: check symbols
+        # We won't check symbols here, because Accelerate is built in a
+        # consistent fashion with known symbol mangling, unlike OpenBLAS or
+        # Netlib BLAS/LAPACK.
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(
     'openblas',
-    #[DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
-    [DependencyMethods.SYSTEM],#, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
+    [DependencyMethods.SYSTEM, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
     system_class=OpenBLASSystemDependency,
     pkgconfig_class=OpenBLASPkgConfigDependency,
     cmake_class=OpenBLASCMakeDependency,
