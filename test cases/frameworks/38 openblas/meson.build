@@ -25,7 +25,7 @@ accelerate_dep = dependency('accelerate',
     'cblas',
     'lapack',
   ],
-  required: false,
+  #  required: false,
 )
 accelerate64_dep = dependency('accelerate',
   modules: [

@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from pathlib import Path
 import re
+import subprocess
+import sys
 import typing as T
 
 from .. import mlog
 from .. import mesonlib
+from ..mesonlib import MachineChoice
 
 from .base import DependencyMethods, SystemDependency
 from .cmake import CMakeDependency
@@ -476,34 +478,28 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
 
-        if not self.check_macOS_recent_enough():
-            return None
-
-        self.detect()
+        for_machine = MachineChoice.BUILD if kwargs.get('native', False) else MachineChoice.HOST
+        if environment.machines[for_machine].is_darwin() and self.check_macOS_recent_enough():
+            self.detect(kwargs)
 
     def check_macOS_recent_enough(self) -> bool:
-        macOS13_3_or_later = False
-        if os.name == 'darwin':
-            cmd = ['xcrun', '-sdk', 'macosx', '--show-sdk-version'],
-            sdk_version = subprocess.run(cmd, capture_output=True, check=True)
-            if sdk_version >= '13.3':
-                macOS13_3_or_later = True
-        return macOS13_3_or_later
+        cmd = ['xcrun', '-sdk', 'macosx', '--show-sdk-version']
+        sdk_version = str(subprocess.run(cmd, capture_output=True, check=True).stdout)
+        return sdk_version >= '13.3'
 
-    def detect(self) -> None:
-        libname = 'Accelerate'
-        link_arg = self.clib_compiler.find_framework('Accelerate', self.env)
-        found_header, _ = self.clib_compiler.has_header('<Accelerate/Accelerate.h>', '',
-                                                        self.env, dependencies=[self])
-        if link_arg and found_header:
-            self.is_found = True
+    def detect(self, kwargs: T.Dict[str, T.Any]) -> None:
+        from .framework import ExtraFrameworkDependency
+        dep = ExtraFrameworkDependency('Accelerate', self.env, kwargs)
+        self.is_found = dep.is_found
+        if self.is_found:
+            self.compile_args = dep.compile_args
+            self.link_args = dep.link_args
             self.compile_args += ['-DACCELERATE_NEW_LAPACK']
             if self.interface == 'ilp64':
                 self.compile_args += ['-DACCELERATE_LAPACK_ILP64']
 
-        # We won't check symbols here, because Accelerate is built in a
-        # consistent fashion with known symbol mangling, unlike OpenBLAS or
-        # Netlib BLAS/LAPACK.
+        # We won't check symbols here, because Accelerate is built in a consistent fashion
+        # with known symbol mangling, unlike OpenBLAS or Netlib BLAS/LAPACK.
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(
