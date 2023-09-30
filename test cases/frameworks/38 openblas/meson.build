@@ -52,9 +52,9 @@ foreach name, dep : deps
     blas_c_args = []
     blas_interface = dep.get_variable('interface')
     if blas_interface == 'ilp64'
-      blas_c_args += ['-DHAVE_BLAS_ILP64', '-DBLAS_SYMBOL_SUFFIX=$NEWLAPACK$ILP64']  # '64_'
+      blas_c_args += ['-DHAVE_BLAS_ILP64', '-DBLAS_SYMBOL_SUFFIX=64_'] #$NEWLAPACK$ILP64']  # '64_'
     elif blas_interface == 'lp64'
-      blas_c_args += ['-DBLAS_SYMBOL_SUFFIX=$NEWLAPACK']
+      blas_c_args += [] #['-DBLAS_SYMBOL_SUFFIX=$NEWLAPACK']
     else
       error(f'no interface var for %name% dependency!')
     endif
