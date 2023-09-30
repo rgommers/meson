@@ -328,7 +328,7 @@ class BLASLAPACKMixin():
         if self.needs_lapacke:
             symbols += ['LAPACKE_zungqr']
 
-        suffix = '' if self.interface == 'lp64' else '64_'
+        suffix = self.get_symbol_suffix()
         prototypes = "".join(f"void {symbol}{suffix}();\n" for symbol in symbols)
         calls = "  ".join(f"{symbol}{suffix}();\n" for symbol in symbols)
         code = (f"{prototypes}"
@@ -346,10 +346,17 @@ class BLASLAPACKMixin():
         varname = kwargs['pkgconfig']
         if varname == 'interface':
             return self.interface
+        elif varname == 'symbol_suffix':
+            return self.get_symbol_suffix()
         return super().get_variable(**kwargs)
 
 
-class OpenBLASSystemDependency(BLASLAPACKMixin, SystemDependency):
+class OpenBLASMixin():
+    def get_symbol_suffix(self) -> str:
+        return '' if self.interface == 'lp64' else '64_'
+
+
+class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
@@ -432,7 +439,7 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, SystemDependency):
         return m.group(0)
 
 
-class OpenBLASPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
+class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, env, kwargs)
         self.feature_since = ('1.3.0', '')
@@ -442,7 +449,7 @@ class OpenBLASPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
             self.is_found = False
 
 
-class OpenBLASCMakeDependency(BLASLAPACKMixin, CMakeDependency):
+class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any],
                  language: T.Optional[str] = None, force_use_global_compilers: bool = False) -> None:
         # TODO: support ILP64. Use functools.partial(PkgConfigDependency...)
@@ -455,12 +462,20 @@ class OpenBLASCMakeDependency(BLASLAPACKMixin, CMakeDependency):
             self.is_found = False
 
 
+class OpenBLASMixin():
+    def get_symbol_suffix(self) -> str:
+        return '' if self.interface == 'lp64' else '64_'
+
+
 class NetlibPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         # TODO: add 'cblas'
         super().__init__('blas', env, kwargs)
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
+
+    def get_symbol_suffix(self) -> str:
+        return ''
 
 
 class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
@@ -503,6 +518,9 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         # We won't check symbols here, because Accelerate is built in a consistent fashion
         # with known symbol mangling, unlike OpenBLAS or Netlib BLAS/LAPACK.
         return None
+
+    def get_symbol_suffix(self) -> str:
+        return '$NEWLAPACK' if self.interface == 'lp64' else '$NEWLAPACK$ILP64'
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(

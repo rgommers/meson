@@ -49,13 +49,12 @@ deps = {
 
 foreach name, dep : deps
   if dep.found()
-    blas_c_args = []
     blas_interface = dep.get_variable('interface')
+    symbol_suffix = dep.get_variable('symbol_suffix')
+    blas_c_args = ['-DBLAS_SYMBOL_SUFFIX=' + symbol_suffix]
     if blas_interface == 'ilp64'
-      blas_c_args += ['-DHAVE_BLAS_ILP64', '-DBLAS_SYMBOL_SUFFIX=64_'] #$NEWLAPACK$ILP64']  # '64_'
-    elif blas_interface == 'lp64'
-      blas_c_args += [] #['-DBLAS_SYMBOL_SUFFIX=$NEWLAPACK']
-    else
+      blas_c_args += ['-DHAVE_BLAS_ILP64']
+    elif blas_interface != 'lp64'
       error(f'no interface var for %name% dependency!')
     endif
 
@@ -64,14 +63,14 @@ foreach name, dep : deps
       c_args: blas_c_args,
       dependencies: [dep]
     )
-    test('openblas_dep', c_exe, timeout: 30)
+    test('cblas_lapack_dep_c', c_exe, timeout: 30)
 
     if add_languages('fortran', required: false)
-      f_exe = executable('openblas_fortran_' + blas_interface,
+      f_exe = executable('cblas_lapack_fortran_' + blas_interface,
         'main.f90',
         dependencies: [dep]
       )
-      test('openblas_fortran', f_exe, timeout: 30)
+      test('cblas_lapack_dep_fortran', f_exe, timeout: 30)
     endif
   endif
 endforeach
