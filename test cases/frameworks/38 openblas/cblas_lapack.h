@@ -15,18 +15,18 @@
 #include <stdlib.h>
 
 #ifdef ACCELERATE_NEW_LAPACK
-    #if __MAC_OS_X_VERSION_MAX_ALLOWED < 130300
-        #ifdef HAVE_BLAS_ILP64
-            #error "Accelerate ILP64 support is only available with macOS 13.3 SDK or later"
-        #endif
-    #else
-        #define NO_APPEND_FORTRAN
-        #ifdef HAVE_BLAS_ILP64
-            #define BLAS_SYMBOL_SUFFIX $NEWLAPACK$ILP64
-        #else
-            #define BLAS_SYMBOL_SUFFIX $NEWLAPACK
-        #endif
-    #endif
+#if __MAC_OS_X_VERSION_MAX_ALLOWED < 130300
+#ifdef HAVE_BLAS_ILP64
+#error "Accelerate ILP64 support is only available with macOS 13.3 SDK or later"
+#endif
+#else
+#define NO_APPEND_FORTRAN
+#ifdef HAVE_BLAS_ILP64
+#define BLAS_SYMBOL_SUFFIX $NEWLAPACK$ILP64
+#else
+#define BLAS_SYMBOL_SUFFIX $NEWLAPACK
+#endif
+#endif
 #endif
 
 #ifdef NO_APPEND_FORTRAN
@@ -39,11 +39,13 @@
 #define BLAS_SYMBOL_SUFFIX
 #endif
 
-#define BLAS_FUNC_CONCAT(name,suffix,suffix2) name ## suffix ## suffix2
-#define BLAS_FUNC_EXPAND(name,suffix,suffix2) BLAS_FUNC_CONCAT(name,suffix,suffix2)
+#define BLAS_FUNC_CONCAT(name, suffix, suffix2) name##suffix##suffix2
+#define BLAS_FUNC_EXPAND(name, suffix, suffix2)                                \
+  BLAS_FUNC_CONCAT(name, suffix, suffix2)
 
-#define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name,,BLAS_SYMBOL_SUFFIX)
-#define BLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_FORTRAN_SUFFIX,BLAS_SYMBOL_SUFFIX)
+#define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name, , BLAS_SYMBOL_SUFFIX)
+#define BLAS_FUNC(name)                                                        \
+  BLAS_FUNC_EXPAND(name, BLAS_FORTRAN_SUFFIX, BLAS_SYMBOL_SUFFIX)
 #define LAPACK_FUNC(name) BLAS_FUNC(name)
 
 #ifdef HAVE_BLAS_ILP64
@@ -54,23 +56,31 @@
 #define lapack_int int
 #endif
 
-enum CBLAS_ORDER {CblasRowMajor=101, CblasColMajor=102};
-enum CBLAS_TRANSPOSE {CblasNoTrans=111, CblasTrans=112, CblasConjTrans=113};
+enum CBLAS_ORDER { CblasRowMajor = 101, CblasColMajor = 102 };
+enum CBLAS_TRANSPOSE {
+  CblasNoTrans = 111,
+  CblasTrans = 112,
+  CblasConjTrans = 113
+};
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void CBLAS_FUNC(cblas_dgemm)(const enum CBLAS_ORDER Order, const enum CBLAS_TRANSPOSE TransA,
-                             const enum CBLAS_TRANSPOSE TransB, const blas_int M, const blas_int N,
-                             const blas_int K, const double alpha, const double *A,
-                             const blas_int lda, const double *B, const blas_int ldb,
+void CBLAS_FUNC(cblas_dgemm)(const enum CBLAS_ORDER Order,
+                             const enum CBLAS_TRANSPOSE TransA,
+                             const enum CBLAS_TRANSPOSE TransB,
+                             const blas_int M, const blas_int N,
+                             const blas_int K, const double alpha,
+                             const double *A, const blas_int lda,
+                             const double *B, const blas_int ldb,
                              const double beta, double *C, const blas_int ldc);
 
-double CBLAS_FUNC(cblas_dnrm2)(const blas_int N, const double *X, const blas_int incX);
+double CBLAS_FUNC(cblas_dnrm2)(const blas_int N, const double *X,
+                               const blas_int incX);
 
-void LAPACK_FUNC(dgesv)(lapack_int *n, lapack_int *nrhs, double *a, lapack_int *lda,
-                        lapack_int *ipivot, double *b,
+void LAPACK_FUNC(dgesv)(lapack_int *n, lapack_int *nrhs, double *a,
+                        lapack_int *lda, lapack_int *ipivot, double *b,
                         lapack_int *ldb, lapack_int *info);
 
 #ifdef __cplusplus
