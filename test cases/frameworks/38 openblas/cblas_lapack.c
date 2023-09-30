@@ -13,7 +13,7 @@ int main(void) {
 
   CBLAS_FUNC(cblas_dgemm)
   (CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3, 2, C, 3);
-  norm = cblas_dnrm2(n_elem, C, incx) - 28.017851;
+  norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, C, incx) - 28.017851;
 
   if (fabs(norm) < 1e-5) {
     printf("OK: CBLAS result using dgemm and dnrm2 as expected\n");
@@ -34,7 +34,7 @@ int main(void) {
 
   LAPACK_FUNC(dgesv)(&n, &nrhs, &m[0], &lda, ipiv, &x[0], &ldb, &info);
   n_elem = 3;
-  norm = cblas_dnrm2(n_elem, x, incx) - 4.255715;
+  norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, x, incx) - 4.255715;
 
   if (fabs(norm) < 1e-5) {
     printf("OK: LAPACK result using dgesv as expected\n");
