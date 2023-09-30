@@ -1,10 +1,31 @@
 // Basic BLAS/LAPACK example adapted from a test in Spack for OpenBLAS
 // Name mangling adapted from NumPy's npy_cblas.h
 
+// hacky - maybe we should get these headers from the meson.build file based on dependency
+#ifdef ACCELERATE_NEW_LAPACK
+#include <Accelerate/Accelerate.h>
+#else
 #include <cblas.h>
+#endif
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+
+#ifdef ACCELERATE_NEW_LAPACK
+    #if __MAC_OS_X_VERSION_MAX_ALLOWED < 130300
+        #ifdef HAVE_BLAS_ILP64
+            #error "Accelerate ILP64 support is only available with macOS 13.3 SDK or later"
+        #endif
+    #else
+        #define NO_APPEND_FORTRAN
+        #ifdef HAVE_BLAS_ILP64
+            #define BLAS_SYMBOL_SUFFIX $NEWLAPACK$ILP64
+        #else
+            #define BLAS_SYMBOL_SUFFIX $NEWLAPACK
+        #endif
+    #endif
+#endif
 
 #ifdef NO_APPEND_FORTRAN
 #define BLAS_FORTRAN_SUFFIX
@@ -12,19 +33,15 @@
 #define BLAS_FORTRAN_SUFFIX _
 #endif
 
-#ifndef BLAS_SYMBOL_PREFIX
-#define BLAS_SYMBOL_PREFIX
-#endif
-
 #ifndef BLAS_SYMBOL_SUFFIX
 #define BLAS_SYMBOL_SUFFIX
 #endif
 
-#define BLAS_FUNC_CONCAT(name,prefix,suffix,suffix2) prefix ## name ## suffix ## suffix2
-#define BLAS_FUNC_EXPAND(name,prefix,suffix,suffix2) BLAS_FUNC_CONCAT(name,prefix,suffix,suffix2)
+#define BLAS_FUNC_CONCAT(name,suffix,suffix2) name ## suffix ## suffix2
+#define BLAS_FUNC_EXPAND(name,suffix,suffix2) BLAS_FUNC_CONCAT(name,suffix,suffix2)
 
-#define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,,BLAS_SYMBOL_SUFFIX)
-#define BLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,BLAS_FORTRAN_SUFFIX,BLAS_SYMBOL_SUFFIX)
+#define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name,,BLAS_SYMBOL_SUFFIX)
+#define BLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_FORTRAN_SUFFIX,BLAS_SYMBOL_SUFFIX)
 
 #ifdef HAVE_BLAS_ILP64
 #define blas_int long
@@ -52,9 +69,10 @@ int main(void) {
     blas_int n_elem = 9;
     double norm;
 
-    CBLAS_FUNC(cblas_dgemm)(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
+    // CBLAS_FUNC(cblas_dgemm)(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
+    cblas_dgemm(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
                 2, C, 3);
-    norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, C, incx) - 28.017851;
+    norm = cblas_dnrm2(n_elem, C, incx) - 28.017851;
 
     if (fabs(norm) < 1e-5) {
         printf("OK: CBLAS result using dgemm and dnrm2 as expected\n");
@@ -75,7 +93,7 @@ int main(void) {
 
     BLAS_FUNC(dgesv)(&n, &nrhs, &m[0], &lda, ipiv, &x[0], &ldb, &info);
     n_elem = 3;
-    norm = CBLAS_FUNC(cblas_dnrm2)(n_elem, x, incx) - 4.255715;
+    norm = cblas_dnrm2(n_elem, x, incx) - 4.255715;
 
     if (fabs(norm) < 1e-5) {
         printf("OK: LAPACK result using dgesv as expected\n");

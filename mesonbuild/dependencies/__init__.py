@@ -237,6 +237,7 @@ packages.defaults.update({
     'libssl': 'misc',
 
     # From blas_lapack:
+    'accelerate': 'blas_lapack',
     'openblas': 'blas_lapack',
 
     # From platform:
