@@ -26,13 +26,18 @@
 #define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,,BLAS_SYMBOL_SUFFIX)
 #define BLAS_FUNC(name) BLAS_FUNC_EXPAND(name,BLAS_SYMBOL_PREFIX,BLAS_FORTRAN_SUFFIX,BLAS_SYMBOL_SUFFIX)
 
+#ifdef HAVE_BLAS_ILP64
+#define blas_int long
+#else
+#define blas_int int
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-void BLAS_FUNC(dgesv)(int *n, int *nrhs, double *a, int *lda, int *ipivot, double *b,
-                      int *ldb, int *info);
+void BLAS_FUNC(dgesv)(blas_int *n, blas_int *nrhs, double *a, blas_int *lda, blas_int *ipivot, double *b,
+                      blas_int *ldb, blas_int *info);
 
 #ifdef __cplusplus
 }
@@ -40,11 +45,11 @@ void BLAS_FUNC(dgesv)(int *n, int *nrhs, double *a, int *lda, int *ipivot, doubl
 
 int main(void) {
     // CBLAS:
-    int incx = 1;
+    blas_int incx = 1;
     double A[6] = {1.0, 2.0, 1.0, -3.0, 4.0, -1.0};
     double B[6] = {1.0, 2.0, 1.0, -3.0, 4.0, -1.0};
     double C[9] = {.5, .5, .5, .5, .5, .5, .5, .5, .5};
-    int n_elem = 9;
+    blas_int n_elem = 9;
     double norm;
 
     CBLAS_FUNC(cblas_dgemm)(CblasColMajor, CblasNoTrans, CblasTrans, 3, 3, 2, 1, A, 3, B, 3,
@@ -61,12 +66,12 @@ int main(void) {
     // LAPACK:
     double m[] = {3, 1, 3, 1, 5, 9, 2, 6, 5};
     double x[] = {-1, 3, -3};
-    int ipiv[3];
-    int info;
-    int n = 1;
-    int nrhs = 1;
-    int lda = 3;
-    int ldb = 3;
+    blas_int ipiv[3];
+    blas_int info;
+    blas_int n = 1;
+    blas_int nrhs = 1;
+    blas_int lda = 3;
+    blas_int ldb = 3;
 
     BLAS_FUNC(dgesv)(&n, &nrhs, &m[0], &lda, ipiv, &x[0], &ldb, &info);
     n_elem = 3;

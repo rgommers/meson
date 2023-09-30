@@ -469,9 +469,11 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
     We only support using Accelerate on macOS >=13.3, where Apple shipped a
     major update to Accelerate, fixed a lot of bugs, and bumped the LAPACK
     version from 3.2 to 3.9. The older Accelerate version is still available,
-    and can be obtained as a standard Framework dependency with:
+    and can be obtained as a standard Framework dependency with one of:
 
+        dependency('Accelerate')
         dependency('appleframeworks', modules : 'Accelerate')
+
     """
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
@@ -500,6 +502,7 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
 
         # We won't check symbols here, because Accelerate is built in a consistent fashion
         # with known symbol mangling, unlike OpenBLAS or Netlib BLAS/LAPACK.
+        return None
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(

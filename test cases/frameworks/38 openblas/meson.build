@@ -25,7 +25,7 @@ accelerate_dep = dependency('accelerate',
     'cblas',
     'lapack',
   ],
-  #  required: false,
+  required: false,
 )
 accelerate64_dep = dependency('accelerate',
   modules: [
@@ -52,7 +52,7 @@ foreach name, dep : deps
     blas_c_args = []
     blas_interface = dep.get_variable('interface')
     if blas_interface == 'ilp64'
-      blas_c_args += '-DBLAS_SYMBOL_SUFFIX=64_'
+      blas_c_args += ['-DHAVE_BLAS_ILP64', '-DBLAS_SYMBOL_SUFFIX=64_']
     elif blas_interface != 'lp64'
       error(f'no interface var for %name% dependency!')
     endif
