@@ -8,8 +8,27 @@
 // The end result after the standardization discussion in
 // https://github.com/Reference-LAPACK/lapack/issues/666 should be
 // `cblas_dgemm_64`, however that isn't yet final or implemented.
+//
+// # Actual symbols present in MKL:
 
-// Name mangling adapted from NumPy's npy_cblas.h
+//   00000000003e4970 T cblas_dgemm
+//   00000000003e4970 T cblas_dgemm_
+//   00000000003e34e0 T cblas_dgemm_64
+//   00000000003e34e0 T cblas_dgemm_64_
+//
+//   00000000004e9f80 T dgesv
+//   00000000004e9f80 T dgesv_
+//   00000000004ea050 T dgesv_64
+//   00000000004ea050 T dgesv_64_
+//
+//
+// # Actual symbols present in OpenBLAS (in `libopenblas64`):
+//
+//   00000000000a3430 T cblas_dgemm64_
+//
+//   00000000000a6e50 T dgesv_64_
+
+// Name mangling adapted/extended from NumPy's npy_cblas.h
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,9 +63,15 @@
   BLAS_FUNC_CONCAT(name, suffix, suffix2)
 
 #define CBLAS_FUNC(name) BLAS_FUNC_EXPAND(name, , BLAS_SYMBOL_SUFFIX)
+#ifdef OPENBLAS_ILP64_NAMING_SCHEME
 #define BLAS_FUNC(name)                                                        \
   BLAS_FUNC_EXPAND(name, BLAS_FORTRAN_SUFFIX, BLAS_SYMBOL_SUFFIX)
 #define LAPACK_FUNC(name) BLAS_FUNC(name)
+#else
+#define BLAS_FUNC(name)                                                        \
+  BLAS_FUNC_EXPAND(name, BLAS_SYMBOL_SUFFIX, BLAS_FORTRAN_SUFFIX)
+#define LAPACK_FUNC(name) BLAS_FUNC(name)
+#endif
 
 #ifdef HAVE_BLAS_ILP64
 #define blas_int long

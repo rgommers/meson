@@ -20,7 +20,7 @@ import typing as T
 
 from .. import mlog
 from .. import mesonlib
-from ..mesonlib import MachineChoice
+from ..mesonlib import MachineChoice, OptionKey
 
 from .base import DependencyMethods, SystemDependency
 from .cmake import CMakeDependency
@@ -462,11 +462,6 @@ class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
             self.is_found = False
 
 
-class OpenBLASMixin():
-    def get_symbol_suffix(self) -> str:
-        return '' if self.interface == 'lp64' else '64_'
-
-
 class NetlibPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         # TODO: add 'cblas'
@@ -523,6 +518,53 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         return '$NEWLAPACK' if self.interface == 'lp64' else '$NEWLAPACK$ILP64'
 
 
+class MKLPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
+    """
+    pkg-config files for MKL were fixed recently, and should work from 2023.0
+    onwards. Directly using a specific one like so should work:
+
+        dependency('mkl-dynamic-ilp64-seq')
+
+    The naming scheme is `mkl-libtype-interface-threading.pc`, with values:
+        - libtype: dynamic/static
+        - interface: lp64/ilp64
+        - threading: seq/iomp/gomp/tbb
+
+    Furthermore there is a pkg-config file for the Single Dynamic Library
+    (libmkl_rt.so) named `mkl-sdl.pc` (only added in 2023.0).
+
+    Note that there is also an MKLPkgConfig dependency in scalapack.py, which
+    has more manual fixes.
+    """
+    def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
+        self.feature_since = ('1.3.0', '')
+        self.parse_modules(kwargs)
+
+        static_opt = kwargs.get('static', env.coredata.get_option(OptionKey('prefer_static')))
+        libtype = 'static' if static_opt else 'dynamic'
+
+        name = f'mkl-{libtype}-{self.interface}-seq'  # FIXME: add threading module option
+        super().__init__(name, env, kwargs)
+
+    def get_symbol_suffix(self) -> str:
+        return '' if self.interface == 'lp64' else '_64'
+
+
+class MKLSystemDependency(BLASLAPACKMixin, SystemDependency):
+    def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
+        super().__init__(name, environment, kwargs)
+        self.feature_since = ('1.3.0', '')
+        self.parse_modules(kwargs)
+
+        # TODO: how to go about this? Use MKLROOT in addition to standard libdir(s)?
+        #       support a machine file?
+        if self.is_found:
+            self.version = self.detect_mkl_version()
+
+    def get_symbol_suffix(self) -> str:
+        return '' if self.interface == 'lp64' else '_64'
+
+
 packages['openblas'] = openblas_factory = DependencyFactory(
     'openblas',
     [DependencyMethods.SYSTEM, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
@@ -544,4 +586,12 @@ packages['accelerate'] = accelerate_factory = DependencyFactory(
     'accelerate',
     [DependencyMethods.SYSTEM],
     system_class=AccelerateSystemDependency,
+)
+
+
+packages['mkl'] = mkl_factory = DependencyFactory(
+    'mkl',
+    [DependencyMethods.PKGCONFIG],  # DependencyMethods.SYSTEM
+    pkgconfig_class=MKLPkgConfigDependency,
+    #system_class=MKLSystemDependency,
 )

@@ -36,7 +36,26 @@ accelerate64_dep = dependency('accelerate',
   required: false,
 )
 
-if not openblas_dep.found() and not openblas64_dep.found() and not accelerate_dep.found()
+# MKL LP64 and ILP64
+mkl_dep = dependency('mkl',
+  modules: [
+    'interface: lp64',
+    'cblas',
+    'lapack',
+  ],
+  required: false,
+)
+mkl64_dep = dependency('mkl',
+  modules: [
+    'interface: ilp64',
+    'cblas',
+    'lapack',
+  ],
+  required: false,
+)
+
+
+if not openblas_dep.found() and not openblas64_dep.found() and not accelerate_dep.found() and not mkl_dep.found()
   error('MESON_SKIP_TEST: no BLAS/LAPACK libraries available')
 endif
 
@@ -45,6 +64,8 @@ deps = {
   'openblas64': openblas64_dep,
   'accelerate': accelerate_dep,
   'accelerate64': accelerate64_dep,
+  'mkl': mkl_dep,
+  'mkl64': mkl64_dep,
 }
 
 foreach name, dep : deps
@@ -54,6 +75,9 @@ foreach name, dep : deps
     blas_c_args = ['-DBLAS_SYMBOL_SUFFIX=' + symbol_suffix]
     if blas_interface == 'ilp64'
       blas_c_args += ['-DHAVE_BLAS_ILP64']
+      if 'openblas' in dep.name()
+        blas_c_args += ['-DOPENBLAS_ILP64_NAMING_SCHEME']
+      endif
     elif blas_interface != 'lp64'
       error(f'no interface var for %name% dependency!')
     endif
