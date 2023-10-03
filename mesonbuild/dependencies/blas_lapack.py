@@ -338,7 +338,12 @@ class BLASLAPACKMixin():
                  "  return 0;\n"
                  "}"
                 )
-        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
+        if self.clib_compiler.language == 'c':
+            return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
+        else:
+            # The above check is specific to C. TODO: why is this using C++ for clib_compiler?
+            # That prevents checking for possibly missing LAPACK symbols in OpenBLAS.
+            return True
 
     def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
         # TODO: what's going on with `get_variable`? Need to pick from
