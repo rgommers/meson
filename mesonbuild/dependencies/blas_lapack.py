@@ -308,12 +308,13 @@ class BLASLAPACKMixin():
             if module not in valid_modules:
                 raise mesonlib.MesonException(f'Unknown modules argument: {module}')
 
-        self.interface = ''
         interface = [s for s in modules if s.startswith('interface')]
         if interface:
             if len(interface) > 1:
                 raise mesonlib.MesonException(f'Only one interface must be specified, found: {interface}')
             self.interface = interface[0].split(' ')[1]
+        else:
+            self.interface = 'lp64'
 
         self.needs_cblas = 'cblas' in modules
         self.needs_lapack = 'lapack' in modules
@@ -518,31 +519,61 @@ class MKLMixin():
     def get_symbol_suffix(self) -> str:
         return '' if self.interface == 'lp64' else '_64'
 
-    def parse_threading_option(self, kwargs: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
-        """Parse `modules` and remove threading option from it if it is present.
+    def parse_mkl_options(self, kwargs: T.Dict[str, T.Any]) -> None:
+        """Parse `modules` and remove threading and SDL options from it if they are present.
 
-        Removing 'threading: <val>' from `modules` is needed to ensure it
-        doesn't get to the generic parse_modules() method for all BLAS/LAPACK dependencies.
+        Removing 'threading: <val>' and 'sdl' from `modules` is needed to ensure those
+        don't get to the generic parse_modules() method for all BLAS/LAPACK dependencies.
         """
         modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
-        threading_modules = [s for s in modules if s.startswith('threading')]
-        if not threading_modules:
-            # TODO: switch default to iomp once conda-forge missing openmp.pc issue is fixed
-            self.threading = 'seq'
-            return kwargs
+        threading_module = [s for s in modules if s.startswith('threading')]
+        sdl_module = [s for s in modules if s.startswith('sdl')]
 
-        if len(threading_modules) > 1:
+        if not threading_module:
+            self.threading = 'iomp'
+        elif len(threading_module) > 1:
             raise mesonlib.MesonException(f'Multiple threading arguments: {threading_modules}')
+        else:
+            # We have a single threading option specified - validate and process it
+            opt = threading_module[0]
+            if opt not in ['threading: ' + s for s in ('seq', 'iomp', 'gomp', 'tbb')]:
+                raise mesonlib.MesonException(f'Invalid threading argument: {opt}')
 
-        # We have a single threading option specified - validate and process it
-        opt = threading_modules[0]
-        if opt not in ['threading: ' + s for s in ('seq', 'iomp', 'gomp', 'tbb')]:
-            raise mesonlib.MesonException(f'Invalid threading argument: {opt}')
+            self.threading = opt.split(' ')[1]
+            modules = [s for s in modules if not s == opt]
+            kwargs['modules'] = modules
 
-        self.threading = opt.split(' ')[1]
-        modules = [s for s in modules if not s == opt]
-        kwargs['modules'] = modules
-        return kwargs
+        if not sdl_module:
+            self.use_sdl = 'auto'
+        elif len(sdl_module) > 1:
+            raise mesonlib.MesonException(f'Multiple sdl arguments: {threading_modules}')
+        else:
+            # We have a single sdl option specified - validate and process it
+            opt = sdl_module[0]
+            if opt not in ['sdl: ' + s for s in ('true', 'false', 'auto')]:
+                raise mesonlib.MesonException(f'Invalid sdl argument: {opt}')
+
+            self.use_sdl = {
+                'false': False,
+                'true': True,
+                'auto': 'auto'
+            }.get(opt.split(' ')[1])
+            modules = [s for s in modules if not s == opt]
+            kwargs['modules'] = modules
+
+        # Parse common BLAS/LAPACK options
+        self.parse_modules(kwargs)
+
+        # Check if we don't have conflicting options between SDL's defaults and interface/threading
+        self.sdl_default_opts = self.interface == 'lp64' and self.threading == 'iomp'
+        if self.use_sdl == 'auto' and not self.sdl_default_opts:
+            self.use_sdl = False
+        elif self.use_sdl and not self.sdl_default_opts:
+            # If we're here, we got an explicit `sdl: 'true'`
+            raise mesonlib.MesonException(f'Linking SDL implies using LP64 and Intel OpenMP, found '
+                                          f'conflicting options: {self.interface}, {self.threading}')
+
+        return None
 
 
 class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
@@ -565,26 +596,37 @@ class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
     """
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         self.feature_since = ('1.3.0', '')
-        kwargs = self.parse_threading_option(kwargs)
-        self.parse_modules(kwargs)
+        self.parse_mkl_options(kwargs)
+        if self.use_sdl == 'auto':
+            # Layered libraries are preferred, and .pc files for layered were
+            # available before the .pc file for SDL
+            self.use_sdl = False
 
         static_opt = kwargs.get('static', env.coredata.get_option(OptionKey('prefer_static')))
         libtype = 'static' if static_opt else 'dynamic'
 
-        name = f'mkl-{libtype}-{self.interface}-{self.threading}'
+        if self.use_sdl:
+            name = 'mkl-sdl'
+        else:
+            name = f'mkl-{libtype}-{self.interface}-{self.threading}'
         super().__init__(name, env, kwargs)
 
 
 class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
+    """This only detects MKL's Single Dynamic Library (SDL)"""
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
-        kwargs = self.parse_threading_option(kwargs)
-        self.parse_modules(kwargs)
+        self.parse_mkl_options(kwargs)
+        if self.use_sdl == 'auto':
+            # Too complex to use layered here - only supported with pkg-config
+            self.use_sdl = True
 
-        self.detect()
+        if self.use_sdl:
+            self.detect_sdl()
+        return None
 
-    def detect(self) -> None:
+    def detect_sdl(self) -> None:
         # Use MKLROOT in addition to standard libdir(s)
         _m = os.environ.get('MKLROOT')
         mklroot = Path(_m).resolve() if _m else None
@@ -598,15 +640,16 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
             if not libdir.exists() or not incdir.exists():
                 mlog.warning('MKLROOT env var set, but not pointing to an MKL install')
 
-        # TODO: use layered libs here?
         link_arg = self.clib_compiler.find_library('mkl_rt', self.env, lib_dirs)
         incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
         found_header, _ = self.clib_compiler.has_header('mkl_version.h', '', self.env,
                                                         dependencies=[self], extra_args=incdir_args)
         if link_arg and found_header:
             self.is_found = True
-            self.link_args += link_arg
             self.compile_args += incdir_args
+            self.link_args += link_arg
+            if not sys.platform == 'win32':
+                self.link_args += ['-lpthread', '-lm', '-ldl']
 
             # Determine MKL version
             ver, _ = self.clib_compiler.get_define('INTEL_MKL_VERSION',
