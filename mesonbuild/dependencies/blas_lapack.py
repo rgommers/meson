@@ -397,23 +397,12 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
             incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
             found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
                                                             dependencies=[self], extra_args=incdir_args)
-            # FIXME: simplify!
             if link_arg and found_header:
                 if not self.check_symbols(link_arg):
                     continue
                 self.is_found = True
-                if lib_dirs:
-                    # `link_arg` will be either `[-lopenblas]` or `[/path_to_sharedlib/libopenblas.so]`
-                    # is the latter behavior expected?
-                    found_libdir = Path(link_arg[0]).parent
-                    self.link_args += [f'-L{found_libdir}', f'-l{libname}']
-                else:
-                    self.link_args += link_arg
-
-                # has_header does not return a path with where the header was
-                # found, so add all provided include directories
+                self.link_args += link_arg
                 self.compile_args += incdir_args
-                return None
 
     def detect_openblas_machine_file(self, props: dict) -> None:
         # TBD: do we need to support multiple extra dirs?
