@@ -523,7 +523,38 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         return '$NEWLAPACK' if self.interface == 'lp64' else '$NEWLAPACK$ILP64'
 
 
-class MKLPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
+class MKLMixin():
+    def get_symbol_suffix(self) -> str:
+        return '' if self.interface == 'lp64' else '_64'
+
+    def parse_threading_option(self, kwargs: T.Dict[str, T.Any]) -> T.Dict[str, T.Any]:
+        """Parse `modules` and remove threading option from it if it is present.
+
+        Removing 'threading: <val>' from `modules` is needed to ensure it
+        doesn't get to the generic parse_modules() method for all BLAS/LAPACK dependencies.
+        """
+        modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
+        threading_modules = [s for s in modules if s.startswith('threading')]
+        if not threading_modules:
+            # TODO: switch default to iomp once conda-forge missing openmp.pc issue is fixed
+            self.threading = 'seq'
+            return kwargs
+
+        if len(threading_modules) > 1:
+            raise mesonlib.MesonException(f'Multiple threading arguments: {threading_modules}')
+
+        # We have a single threading option specified - validate and process it
+        opt = threading_modules[0]
+        if opt not in ['threading: ' + s for s in ('seq', 'iomp', 'gomp', 'tbb')]:
+            raise mesonlib.MesonException(f'Invalid threading argument: {opt}')
+
+        self.threading = opt.split(' ')[1]
+        modules = [s for s in modules if not s == opt]
+        kwargs['modules'] = modules
+        return kwargs
+
+
+class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
     """
     pkg-config files for MKL were fixed recently, and should work from 2023.0
     onwards. Directly using a specific one like so should work:
@@ -543,31 +574,27 @@ class MKLPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     """
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         self.feature_since = ('1.3.0', '')
+        kwargs = self.parse_threading_option(kwargs)
         self.parse_modules(kwargs)
 
         static_opt = kwargs.get('static', env.coredata.get_option(OptionKey('prefer_static')))
         libtype = 'static' if static_opt else 'dynamic'
 
-        name = f'mkl-{libtype}-{self.interface}-seq'  # FIXME: add threading module option
+        name = f'mkl-{libtype}-{self.interface}-{self.threading}'
         super().__init__(name, env, kwargs)
 
-    def get_symbol_suffix(self) -> str:
-        return '' if self.interface == 'lp64' else '_64'
 
-
-class MKLSystemDependency(BLASLAPACKMixin, SystemDependency):
+class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
+        kwargs = self.parse_threading_option(kwargs)
         self.parse_modules(kwargs)
 
         # TODO: how to go about this? Use MKLROOT in addition to standard libdir(s)?
         #       support a machine file?
         if self.is_found:
             self.version = self.detect_mkl_version()
-
-    def get_symbol_suffix(self) -> str:
-        return '' if self.interface == 'lp64' else '_64'
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(
