@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -396,6 +397,7 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
             incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
             found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
                                                             dependencies=[self], extra_args=incdir_args)
+            # FIXME: simplify!
             if link_arg and found_header:
                 if not self.check_symbols(link_arg):
                     continue
@@ -591,10 +593,47 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
         kwargs = self.parse_threading_option(kwargs)
         self.parse_modules(kwargs)
 
-        # TODO: how to go about this? Use MKLROOT in addition to standard libdir(s)?
-        #       support a machine file?
-        if self.is_found:
-            self.version = self.detect_mkl_version()
+        self.detect()
+
+    def detect(self) -> None:
+        # Use MKLROOT in addition to standard libdir(s)
+        _m = os.environ.get('MKLROOT')
+        mklroot = Path(_m).resolve() if _m else None
+        lib_dirs = []
+        inc_dirs = []
+        if mklroot is not None:
+            libdir = mklroot / 'lib' / 'intel64'
+            incdir = mklroot / 'include'
+            lib_dirs += [libdir]
+            inc_dirs += [incdir]
+            if not libdir.exists() or not incdir.exists():
+                mlog.warning('MKLROOT env var set, but not pointing to an MKL install')
+
+        # TODO: use layered libs here?
+        link_arg = self.clib_compiler.find_library('mkl_rt', self.env, lib_dirs)
+        incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
+        found_header, _ = self.clib_compiler.has_header('mkl_version.h', '', self.env,
+                                                        dependencies=[self], extra_args=incdir_args)
+        if link_arg and found_header:
+            self.is_found = True
+            self.link_args += link_arg
+            self.compile_args += incdir_args
+
+            # Determine MKL version
+            ver, _ = self.clib_compiler.get_define('INTEL_MKL_VERSION',
+                                                   '#include "mkl_version.h"',
+                                                   self.env,
+                                                   dependencies=[self],
+                                                   extra_args=incdir_args)
+            if len(ver) == 8:
+                year = ver[:4]
+                minor = str(int(ver[4:6]))
+                update = str(int(ver[6:]))
+                # Note: this is the order as of 2023.2.0, but it looks the wrong way around
+                # (INTEL_MKL_VERSION is defined as 20230002 in that release), could be swapped in the future perhaps
+                self.version = f'{year}.{update}.{minor}'
+            else:
+                mlog.warning(f'MKL version detection issue, found {ver}')
 
 
 packages['openblas'] = openblas_factory = DependencyFactory(
@@ -623,7 +662,7 @@ packages['accelerate'] = accelerate_factory = DependencyFactory(
 
 packages['mkl'] = mkl_factory = DependencyFactory(
     'mkl',
-    [DependencyMethods.PKGCONFIG],  # DependencyMethods.SYSTEM
+    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM],
     pkgconfig_class=MKLPkgConfigDependency,
-    #system_class=MKLSystemDependency,
+    system_class=MKLSystemDependency,
 )
