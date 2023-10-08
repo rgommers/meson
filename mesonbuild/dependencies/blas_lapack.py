@@ -572,7 +572,7 @@ class MKLSystemDependency(BLASLAPACKMixin, SystemDependency):
 
 packages['openblas'] = openblas_factory = DependencyFactory(
     'openblas',
-    [DependencyMethods.SYSTEM, DependencyMethods.PKGCONFIG, DependencyMethods.CMAKE],
+    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
     system_class=OpenBLASSystemDependency,
     pkgconfig_class=OpenBLASPkgConfigDependency,
     cmake_class=OpenBLASCMakeDependency,
