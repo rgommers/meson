@@ -450,6 +450,8 @@ class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDepen
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
 
+        # TODO: support ILP64. Use functools.partial(PkgConfigDependency...)
+        #       for the 3 possible names here?
         if not self.check_symbols(self.link_args):
             self.is_found = False
 
@@ -457,13 +459,13 @@ class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDepen
 class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any],
                  language: T.Optional[str] = None, force_use_global_compilers: bool = False) -> None:
-        # TODO: support ILP64. Use functools.partial(PkgConfigDependency...)
-        #       for the 3 possible names here?
         super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
 
-        if not self.check_symbols(self.link_args):
+        if self.interface == 'ilp64':
+            self.is_found = False
+        elif not self.check_symbols(self.link_args):
             self.is_found = False
 
 
