@@ -706,14 +706,6 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
                 mlog.warning(f'MKL version detection issue, found {ver}')
 
 
-#packages['openblas'] = openblas_factory = DependencyFactory(
-#    'openblas',
-#    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
-#    system_class=OpenBLASSystemDependency,
-#    pkgconfig_class=OpenBLASPkgConfigDependency,
-#    cmake_class=OpenBLASCMakeDependency,
-#)
-
 @factory_methods({DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE})
 def openblas_factory(env: 'Environment', for_machine: 'MachineChoice',
                      kwargs: T.Dict[str, T.Any],
