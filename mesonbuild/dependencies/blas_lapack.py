@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import functools
 import os
 from pathlib import Path
 import re
@@ -26,7 +27,7 @@ from ..mesonlib import MachineChoice, OptionKey
 from .base import DependencyMethods, SystemDependency
 from .cmake import CMakeDependency
 from .detect import packages
-from .factory import DependencyFactory
+from .factory import DependencyFactory, factory_methods
 from .pkgconfig import PkgConfigDependency
 
 if T.TYPE_CHECKING:
@@ -320,7 +321,7 @@ class BLASLAPACKMixin():
         self.needs_lapack = 'lapack' in modules
         self.needs_lapacke = 'lapacke' in modules
 
-    def check_symbols(self, compile_args) -> None:
+    def check_symbols(self, compile_args, suffix=None) -> None:
         # verify that we've found the right LP64/ILP64 interface
         symbols = ['dgemm_']
         if self.needs_cblas:
@@ -330,7 +331,9 @@ class BLASLAPACKMixin():
         if self.needs_lapacke:
             symbols += ['LAPACKE_zungqr']
 
-        suffix = self.get_symbol_suffix()
+        if suffix is None:
+            suffix = self.get_symbol_suffix()
+
         prototypes = "".join(f"void {symbol}{suffix}();\n" for symbol in symbols)
         calls = "  ".join(f"{symbol}{suffix}();\n" for symbol in symbols)
         code = (f"{prototypes}"
@@ -340,12 +343,16 @@ class BLASLAPACKMixin():
                  "  return 0;\n"
                  "}"
                 )
-        if self.clib_compiler.language == 'c':
-            return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
-        else:
-            # The above check is specific to C. TODO: why is this using C++ for clib_compiler?
-            # That prevents checking for possibly missing LAPACK symbols in OpenBLAS.
-            return True
+        code = '''#ifdef __cplusplus
+               extern "C" {
+               #endif
+               ''' + code + '''
+               #ifdef __cplusplus
+               }
+               #endif
+               '''
+
+        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
 
     def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
         # TODO: what's going on with `get_variable`? Need to pick from
@@ -360,7 +367,20 @@ class BLASLAPACKMixin():
 
 class OpenBLASMixin():
     def get_symbol_suffix(self) -> str:
-        return '' if self.interface == 'lp64' else '64_'
+        return '' if self.interface == 'lp64' else self._ilp64_suffix
+
+    def probe_symbols(self, compile_args) -> bool:
+        """There are two common ways of building ILP64 BLAS, check which one we're dealing with"""
+        if self.interface == 'lp64':
+            return self.check_symbols(compile_args)
+
+        if self.check_symbols(compile_args, '64_'):
+            self._ilp64_suffix = '64_'
+        elif self.check_symbols(compile_args, ''):
+            self._ilp64_suffix = ''
+        else:
+            return False
+        return True
 
 
 class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency):
@@ -404,7 +424,7 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
                     break
 
             if link_arg and found_header:
-                if not self.check_symbols(link_arg):
+                if not self.probe_symbols(link_arg):
                     continue
                 self.is_found = True
                 self.link_args += link_arg
@@ -446,13 +466,16 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
 
 class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
-        super().__init__(name, env, kwargs)
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
+        if self.interface == 'lp64' and name != 'openblas':
+            # Check only for 'openblas' for LP64 (there are multiple names for ILP64)
+            self.is_found = False
+            return None
 
-        # TODO: support ILP64. Use functools.partial(PkgConfigDependency...)
-        #       for the 3 possible names here?
-        if not self.check_symbols(self.link_args):
+        super().__init__(name, env, kwargs)
+
+        if not self.probe_symbols(self.link_args):
             self.is_found = False
 
 
@@ -465,7 +488,7 @@ class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
 
         if self.interface == 'ilp64':
             self.is_found = False
-        elif not self.check_symbols(self.link_args):
+        elif not self.probe_symbols(self.link_args):
             self.is_found = False
 
 
@@ -683,13 +706,36 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
                 mlog.warning(f'MKL version detection issue, found {ver}')
 
 
-packages['openblas'] = openblas_factory = DependencyFactory(
-    'openblas',
-    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
-    system_class=OpenBLASSystemDependency,
-    pkgconfig_class=OpenBLASPkgConfigDependency,
-    cmake_class=OpenBLASCMakeDependency,
-)
+#packages['openblas'] = openblas_factory = DependencyFactory(
+#    'openblas',
+#    [DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE],
+#    system_class=OpenBLASSystemDependency,
+#    pkgconfig_class=OpenBLASPkgConfigDependency,
+#    cmake_class=OpenBLASCMakeDependency,
+#)
+
+@factory_methods({DependencyMethods.PKGCONFIG, DependencyMethods.SYSTEM, DependencyMethods.CMAKE})
+def openblas_factory(env: 'Environment', for_machine: 'MachineChoice',
+                     kwargs: T.Dict[str, T.Any],
+                     methods: T.List[DependencyMethods]) -> T.List['DependencyGenerator']:
+    candidates: T.List['DependencyGenerator'] = []
+
+    if DependencyMethods.PKGCONFIG in methods:
+        for pkg in ['openblas64', 'openblas_ilp64', 'openblas']:
+            candidates.append(functools.partial(
+                OpenBLASPkgConfigDependency, pkg, env, kwargs))
+
+    if DependencyMethods.SYSTEM in methods:
+        candidates.append(functools.partial(
+            OpenBLASSystemDependency, 'openblas', env, kwargs))
+
+    if DependencyMethods.CMAKE in methods:
+        candidates.append(functools.partial(
+            OpenBLASCMakeDependency, 'OpenBLAS', env, kwargs))
+
+    return candidates
+
+packages['openblas'] = openblas_factory
 
 
 packages['netlib-blas'] = netlib_factory = DependencyFactory(
