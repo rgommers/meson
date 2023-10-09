@@ -634,6 +634,11 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
         inc_dirs = []
         if mklroot is not None:
             libdir = mklroot / 'lib' / 'intel64'
+            if not libdir.exists():
+                # MKLROOT may be pointing at the prefix where MKL was installed from PyPI
+                # or Conda (Intel supports those install methods, but dropped the `intel64`
+                # part, libraries go straight into <prefix>/lib
+                libdir = mklroot / 'lib'
             incdir = mklroot / 'include'
             lib_dirs += [libdir]
             inc_dirs += [incdir]
