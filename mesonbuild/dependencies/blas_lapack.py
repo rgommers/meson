@@ -643,7 +643,7 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
             lib_dirs += [libdir]
             inc_dirs += [incdir]
             if not libdir.exists() or not incdir.exists():
-                mlog.warning('MKLROOT env var set, but not pointing to an MKL install')
+                mlog.warning(f'MKLROOT env var set to {mklroot}, but not pointing to an MKL install')
 
         link_arg = self.clib_compiler.find_library('mkl_rt', self.env, lib_dirs)
         incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
