@@ -396,14 +396,20 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
         for libname in libnames:
             link_arg = self.clib_compiler.find_library(libname, self.env, lib_dirs)
             incdir_args = [f'-I{inc_dir}' for inc_dir in inc_dirs]
-            found_header, _ = self.clib_compiler.has_header('openblas_config.h', '', self.env,
-                                                            dependencies=[self], extra_args=incdir_args)
+            for hdr in ['openblas_config.h', 'openblas/openblas_config.h']:
+                found_header, _ = self.clib_compiler.has_header(hdr, '', self.env, dependencies=[self],
+                                                                extra_args=incdir_args)
+                if found_header:
+                    self._openblas_config_header = hdr
+                    break
+
             if link_arg and found_header:
                 if not self.check_symbols(link_arg):
                     continue
                 self.is_found = True
                 self.link_args += link_arg
                 self.compile_args += incdir_args
+                break
 
     def detect_openblas_machine_file(self, props: dict) -> None:
         # TBD: do we need to support multiple extra dirs?
@@ -427,7 +433,9 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
         self.detect([libdir], [incdir])
 
     def detect_openblas_version(self) -> str:
-        v, _ = self.clib_compiler.get_define('OPENBLAS_VERSION', '#include <openblas_config.h>', self.env, [], [self])
+        v, _ = self.clib_compiler.get_define('OPENBLAS_VERSION',
+                                             f'#include <{self._openblas_config_header}>',
+                                             self.env, [], [self])
 
         m = re.search(r'\d+(?:\.\d+)+', v)
         if not m:
