@@ -520,13 +520,17 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
 
+        print(f'ACCELERATE: {self.is_found}')
         for_machine = MachineChoice.BUILD if kwargs.get('native', False) else MachineChoice.HOST
         if environment.machines[for_machine].is_darwin() and self.check_macOS_recent_enough():
+            print(f'ACCELERATE: {self.is_found}')
             self.detect(kwargs)
+            print(f'ACCELERATE: {self.is_found}')
 
     def check_macOS_recent_enough(self) -> bool:
         cmd = ['xcrun', '-sdk', 'macosx', '--show-sdk-version']
         sdk_version = str(subprocess.run(cmd, capture_output=True, check=True).stdout)
+        print(f'MACOS SDK VERSION: {sdk_version}')
         return sdk_version >= '13.3'
 
     def detect(self, kwargs: T.Dict[str, T.Any]) -> None:
