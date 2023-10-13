@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from __future__ import annotations
 import functools
 import os
 from pathlib import Path
@@ -31,7 +32,36 @@ from .factory import DependencyFactory, factory_methods
 from .pkgconfig import PkgConfigDependency
 
 if T.TYPE_CHECKING:
+    from ..base import MissingCompiler
+    from ..compilers import Compiler
     from ..environment import Environment
+    from .factory import DependencyGenerator
+    from ..interpreter.type_checking import PkgConfigDefineType
+    try:
+        from typing import Protocol
+    except AttributeError:
+        from typing_extensions import Protocol  # type: ignore
+
+    class InterfaceBLAS(Protocol):
+        clib_compiler: T.Union['MissingCompiler', 'Compiler']
+        env: Environment
+        interface: str
+        is_found: bool
+        needs_cblas: bool
+        needs_lapack: bool
+        needs_lapacke: bool
+        variables: T.Dict[str, str]
+
+        def check_symbols(self, compile_args: T.List[str], suffix: str = None) -> bool: ...
+        def get_symbol_suffix(self) -> str: ...
+        def parse_modules(self, kwargs: T.Dict[str, T.Any]) -> None: ...
+        def get_variable(self, *, cmake: T.Optional[str] = None, pkgconfig: T.Optional[str] = None,
+                         configtool: T.Optional[str] = None, internal: T.Optional[str] = None,
+                         default_value: T.Optional[str] = None,
+                         pkgconfig_define: PkgConfigDefineType = None) -> str: ...
+else:
+    class InterfaceBLAS():
+        pass
 
 
 # See https://gist.github.com/rgommers/e10c7cf3ebd88883458544e535d7e54c for details on
@@ -39,7 +69,7 @@ if T.TYPE_CHECKING:
 # detection implementations and distro recipes, etc.
 
 
-class BLASLAPACKMixin():
+class BLASLAPACKMixin(InterfaceBLAS):
     def parse_modules(self, kwargs: T.Dict[str, T.Any]) -> None:
         modules: T.List[str] = mesonlib.extract_as_list(kwargs, 'modules')
         valid_modules = ['interface: lp64', 'interface: ilp64', 'cblas', 'lapack', 'lapacke']
@@ -59,7 +89,12 @@ class BLASLAPACKMixin():
         self.needs_lapack = 'lapack' in modules
         self.needs_lapacke = 'lapacke' in modules
 
-    def check_symbols(self, compile_args, suffix=None) -> None:
+        self.variables: T.Dict[str, str] = {'interface': self.interface}
+
+    def get_symbol_suffix(self) -> str:
+        raise mesonlib.MesonException('`get_symbol_suffix` method must be implemented!')
+
+    def check_symbols(self, compile_args: T.List[str], suffix: str = None) -> bool:
         # verify that we've found the right LP64/ILP64 interface
         symbols = ['dgemm_']
         if self.needs_cblas:
@@ -90,24 +125,41 @@ class BLASLAPACKMixin():
                #endif
                '''
 
-        return self.clib_compiler.links(code, self.env, extra_args=compile_args)[0]
+        return bool(self.clib_compiler.links(code, self.env, extra_args=compile_args)[0])
 
-    def get_variable(self, **kwargs: T.Dict[str, T.Any]) -> str:
-        # TODO: what's going on with `get_variable`? Need to pick from
-        # cmake/pkgconfig/internal/..., but not system?
-        varname = kwargs['pkgconfig']
-        if varname == 'interface':
-            return self.interface
-        elif varname == 'symbol_suffix':
-            return self.get_symbol_suffix()
-        return super().get_variable(**kwargs)
+    def finalize(self) -> None:
+        if self.is_found:
+            self.variables['symbol_suffix'] = self.get_symbol_suffix()
+
+    def get_variable(self, *, cmake: T.Optional[str] = None, pkgconfig: T.Optional[str] = None,
+                     configtool: T.Optional[str] = None, internal: T.Optional[str] = None,
+                     default_value: T.Optional[str] = None,
+                     pkgconfig_define: T.Optional[PkgConfigDefineType] = None) -> str:
+        if pkgconfig:
+            wanted_var = pkgconfig
+        elif internal:
+            wanted_var = internal
+        elif cmake:
+            wanted_var = cmake
+        elif configtool:
+            wanted_var = configtool
+
+        if wanted_var in self.variables.keys():
+            return self.variables[wanted_var]
+        else:
+            return super().get_variable(cmake=cmake,
+                                        pkgconfig=pkgconfig,
+                                        internal=internal,
+                                        configtool=configtool,
+                                        default_value=default_value,
+                                        pkgconfig_define=pkgconfig_define)
 
 
-class OpenBLASMixin():
+class OpenBLASMixin(BLASLAPACKMixin):
     def get_symbol_suffix(self) -> str:
         return '' if self.interface == 'lp64' else self._ilp64_suffix
 
-    def probe_symbols(self, compile_args) -> bool:
+    def probe_symbols(self, compile_args: T.List[str]) -> bool:
         """There are two common ways of building ILP64 BLAS, check which one we're dealing with"""
         if self.interface == 'lp64':
             return self.check_symbols(compile_args)
@@ -121,7 +173,7 @@ class OpenBLASMixin():
         return True
 
 
-class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency):
+class OpenBLASSystemDependency(OpenBLASMixin, SystemDependency):
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
@@ -139,6 +191,8 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
 
         if self.is_found:
             self.version = self.detect_openblas_version()
+
+        self.finalize()
 
     def detect(self, lib_dirs: T.Optional[T.List[str]] = None, inc_dirs: T.Optional[T.List[str]] = None) -> None:
         if lib_dirs is None:
@@ -202,7 +256,7 @@ class OpenBLASSystemDependency(BLASLAPACKMixin, OpenBLASMixin, SystemDependency)
         return m.group(0)
 
 
-class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDependency):
+class OpenBLASPkgConfigDependency(OpenBLASMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
@@ -216,8 +270,10 @@ class OpenBLASPkgConfigDependency(BLASLAPACKMixin, OpenBLASMixin, PkgConfigDepen
         if not self.probe_symbols(self.link_args):
             self.is_found = False
 
+        self.finalize()
 
-class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
+
+class OpenBLASCMakeDependency(OpenBLASMixin, CMakeDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any],
                  language: T.Optional[str] = None, force_use_global_compilers: bool = False) -> None:
         super().__init__('OpenBLAS', env, kwargs, language, force_use_global_compilers)
@@ -229,6 +285,8 @@ class OpenBLASCMakeDependency(BLASLAPACKMixin, OpenBLASMixin, CMakeDependency):
         elif not self.probe_symbols(self.link_args):
             self.is_found = False
 
+        self.finalize()
+
 
 class NetlibPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
@@ -236,10 +294,10 @@ class NetlibPkgConfigDependency(BLASLAPACKMixin, PkgConfigDependency):
         super().__init__('blas', env, kwargs)
         self.feature_since = ('1.3.0', '')
         self.parse_modules(kwargs)
+        self.finalize()
 
     def get_symbol_suffix(self) -> str:
         return ''
-
 
 class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
     """
@@ -261,6 +319,8 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         for_machine = MachineChoice.BUILD if kwargs.get('native', False) else MachineChoice.HOST
         if environment.machines[for_machine].is_darwin() and self.check_macOS_recent_enough():
             self.detect(kwargs)
+
+        self.finalize()
 
     def check_macOS_recent_enough(self) -> bool:
         cmd = ['xcrun', '-sdk', 'macosx', '--show-sdk-version']
@@ -286,7 +346,7 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         return '$NEWLAPACK' if self.interface == 'lp64' else '$NEWLAPACK$ILP64'
 
 
-class MKLMixin():
+class MKLMixin(BLASLAPACKMixin):
     def get_symbol_suffix(self) -> str:
         return '' if self.interface == 'lp64' else '_64'
 
@@ -303,7 +363,7 @@ class MKLMixin():
         if not threading_module:
             self.threading = 'iomp'
         elif len(threading_module) > 1:
-            raise mesonlib.MesonException(f'Multiple threading arguments: {threading_modules}')
+            raise mesonlib.MesonException(f'Multiple threading arguments: {threading_module}')
         else:
             # We have a single threading option specified - validate and process it
             opt = threading_module[0]
@@ -315,20 +375,22 @@ class MKLMixin():
             kwargs['modules'] = modules
 
         if not sdl_module:
-            self.use_sdl = 'auto'
+            self._sdl_module = 'auto'
         elif len(sdl_module) > 1:
-            raise mesonlib.MesonException(f'Multiple sdl arguments: {threading_modules}')
+            raise mesonlib.MesonException(f'Multiple sdl arguments: {threading_module}')
         else:
             # We have a single sdl option specified - validate and process it
             opt = sdl_module[0]
             if opt not in ['sdl: ' + s for s in ('true', 'false', 'auto')]:
                 raise mesonlib.MesonException(f'Invalid sdl argument: {opt}')
 
-            self.use_sdl = {
-                'false': False,
-                'true': True,
-                'auto': 'auto'
-            }.get(opt.split(' ')[1])
+            self._sdl_module = (opt.split(' ')[1])
+            if self._sdl_module == 'false':
+                self.use_sdl = False
+            elif self._sdl_module == 'true':
+                self.use_sdl = True
+
+            # Filter parsed sdl entry out from `modules`
             modules = [s for s in modules if not s == opt]
             kwargs['modules'] = modules
 
@@ -337,17 +399,16 @@ class MKLMixin():
 
         # Check if we don't have conflicting options between SDL's defaults and interface/threading
         self.sdl_default_opts = self.interface == 'lp64' and self.threading == 'iomp'
-        if self.use_sdl == 'auto' and not self.sdl_default_opts:
+        if self._sdl_module == 'auto' and not self.sdl_default_opts:
             self.use_sdl = False
-        elif self.use_sdl and not self.sdl_default_opts:
-            # If we're here, we got an explicit `sdl: 'true'`
+        elif self._sdl_module == 'true' and not self.sdl_default_opts:
             raise mesonlib.MesonException(f'Linking SDL implies using LP64 and Intel OpenMP, found '
                                           f'conflicting options: {self.interface}, {self.threading}')
 
         return None
 
 
-class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
+class MKLPkgConfigDependency(MKLMixin, PkgConfigDependency):
     """
     pkg-config files for MKL were fixed recently, and should work from 2023.0
     onwards. Directly using a specific one like so should work:
@@ -368,7 +429,7 @@ class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
     def __init__(self, name: str, env: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         self.feature_since = ('1.3.0', '')
         self.parse_mkl_options(kwargs)
-        if self.use_sdl == 'auto':
+        if self._sdl_module == 'auto':
             # Layered libraries are preferred, and .pc files for layered were
             # available before the .pc file for SDL
             self.use_sdl = False
@@ -381,21 +442,23 @@ class MKLPkgConfigDependency(BLASLAPACKMixin, MKLMixin, PkgConfigDependency):
         else:
             name = f'mkl-{libtype}-{self.interface}-{self.threading}'
         super().__init__(name, env, kwargs)
+        self.finalize()
 
 
-class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
+class MKLSystemDependency(MKLMixin, SystemDependency):
     """This only detects MKL's Single Dynamic Library (SDL)"""
     def __init__(self, name: str, environment: 'Environment', kwargs: T.Dict[str, T.Any]) -> None:
         super().__init__(name, environment, kwargs)
         self.feature_since = ('1.3.0', '')
         self.parse_mkl_options(kwargs)
-        if self.use_sdl == 'auto':
+        if self._sdl_module == 'auto':
             # Too complex to use layered here - only supported with pkg-config
             self.use_sdl = True
 
         if self.use_sdl:
             self.detect_sdl()
-        return None
+
+        self.finalize()
 
     def detect_sdl(self) -> None:
         # Use MKLROOT in addition to standard libdir(s)
@@ -411,8 +474,8 @@ class MKLSystemDependency(BLASLAPACKMixin, MKLMixin, SystemDependency):
                 # part, libraries go straight into <prefix>/lib
                 libdir = mklroot / 'lib'
             incdir = mklroot / 'include'
-            lib_dirs += [libdir]
-            inc_dirs += [incdir]
+            lib_dirs += [str(libdir)]
+            inc_dirs += [str(incdir)]
             if not libdir.exists() or not incdir.exists():
                 mlog.warning(f'MKLROOT env var set to {mklroot}, but not pointing to an MKL install')
 
