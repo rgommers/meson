@@ -747,6 +747,8 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
         sdk_version = subprocess.run(cmd, capture_output=True, check=True, text=True).stdout.strip()
         macos_version = platform.mac_ver()[0]
         deploy_target = os.environ.get('MACOSX_DEPLOYMENT_TARGET', macos_version)
+        print('SDK: ', sdk_version >= '13.3', sdk_version)
+        print('DEPLOY: ', deploy_target >= '13.3', deploy_target)
         return sdk_version >= '13.3' and deploy_target >= '13.3'
 
     def detect(self, kwargs: T.Dict[str, T.Any]) -> None:
@@ -759,6 +761,8 @@ class AccelerateSystemDependency(BLASLAPACKMixin, SystemDependency):
             self.compile_args += ['-DACCELERATE_NEW_LAPACK']
             if self.interface == 'ilp64':
                 self.compile_args += ['-DACCELERATE_LAPACK_ILP64']
+        else:
+            mlog.info(f'Unable to detect Accelerate framework')
 
         # We won't check symbols here, because Accelerate is built in a consistent fashion
         # with known symbol mangling, unlike OpenBLAS or Netlib BLAS/LAPACK.
