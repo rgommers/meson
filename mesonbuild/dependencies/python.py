@@ -337,6 +337,9 @@ class PythonSystemDependency(SystemDependency, _PythonDependencyBase):
         arch = detect_cpu_family(env.coredata.compilers.host)
         if arch != pyarch:
             mlog.log('Need', mlog.bold(self.name), f'for {arch}, but found {pyarch}')
+            if pyarch == 'x86' and TODO(is_msvc):
+                mlog.log('For targeting 32-bit Python on 64-bit Windows with MSVC, explicitly '
+                         'activate 32-bit MSVC (e.g., with `vcvars32.bat`).')
             self.is_found = False
             return
         # This can fail if the library is not found
