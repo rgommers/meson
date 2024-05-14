@@ -201,6 +201,11 @@ class EmscriptenCCompiler(EmscriptenMixin, ClangCCompiler):
 
     id = 'emscripten'
 
+    _C17_VERSION = '>=3.0.0'  # '>=6.0.0'
+    _C18_VERSION = '>=3.0.0'  # '>=8.0.0'
+    _C2X_VERSION = '>=3.0.0'  # '>=9.0.0'
+    _C23_VERSION = '>=3.0.0'  # '>=18.0.0'
+
     def __init__(self, ccache: T.List[str], exelist: T.List[str], version: str, for_machine: MachineChoice, is_cross: bool,
                  info: 'MachineInfo',
                  linker: T.Optional['DynamicLinker'] = None,
