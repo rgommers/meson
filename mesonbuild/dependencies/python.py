@@ -289,7 +289,12 @@ class PythonSystemDependency(SystemDependency, _PythonDependencyBase):
                 else:
                     if limited_api:
                         vernum = vernum[0]
-                    libpath = Path('libs') / f'python{vernum}.lib'
+                    # TODO: do this properly in python-info
+                    free_threaded = True
+                    if free_threaded:
+                        libpath = Path('libs') / f'python{vernum}t.lib'
+                    else:
+                        libpath = Path('libs') / f'python{vernum}.lib'
                     # For a debug build, pyconfig.h may force linking with
                     # pythonX_d.lib (see meson#10776). This cannot be avoided
                     # and won't work unless we also have a debug build of
