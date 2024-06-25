@@ -10,7 +10,7 @@ import copy
 import os
 import typing as T
 
-from .. import compilers, environment, mesonlib, optinterpreter
+from .. import compilers, environment, mesonlib, optinterpreter, options
 from .. import coredata as cdata
 from ..build import Executable, Jar, SharedLibrary, SharedModule, StaticLibrary
 from ..compilers import detect_compiler_for
@@ -145,13 +145,13 @@ class IntrospectionInterpreter(AstInterpreter):
             subi.project_data['name'] = dirname
             self.project_data['subprojects'] += [subi.project_data]
         except (mesonlib.MesonException, RuntimeError):
-            return
+            pass
 
     def func_add_languages(self, node: BaseNode, args: T.List[TYPE_var], kwargs: T.Dict[str, TYPE_var]) -> None:
         kwargs = self.flatten_kwargs(kwargs)
         required = kwargs.get('required', True)
-        assert isinstance(required, (bool, cdata.UserFeatureOption)), 'for mypy'
-        if isinstance(required, cdata.UserFeatureOption):
+        assert isinstance(required, (bool, options.UserFeatureOption)), 'for mypy'
+        if isinstance(required, options.UserFeatureOption):
             required = required.is_enabled()
         if 'native' in kwargs:
             native = kwargs.get('native', False)
@@ -182,7 +182,7 @@ class IntrospectionInterpreter(AstInterpreter):
                 if self.subproject:
                     options = {}
                     for k in comp.get_options():
-                        v = copy.copy(self.coredata.options[k])
+                        v = copy.copy(self.coredata.optstore.get_value_object(k))
                         k = k.evolve(subproject=self.subproject)
                         options[k] = v
                     self.coredata.add_compiler_options(options, lang, for_machine, self.environment, self.subproject)

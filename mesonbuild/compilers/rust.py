@@ -9,7 +9,7 @@ import textwrap
 import re
 import typing as T
 
-from .. import coredata
+from .. import options
 from ..mesonlib import EnvironmentException, MesonException, Popen_safe_logged, OptionKey
 from .compilers import Compiler, clike_debug_args
 
@@ -158,8 +158,8 @@ class RustCompiler(Compiler):
     # use_linker_args method instead.
 
     def get_options(self) -> MutableKeyedOptionDictType:
-        return dict((self.create_option(coredata.UserComboOption,
-                                        OptionKey('std', machine=self.for_machine, lang=self.language),
+        return dict((self.create_option(options.UserComboOption,
+                                        self.form_langopt_key('std'),
                                         'Rust edition to use',
                                         ['none', '2015', '2018', '2021'],
                                         'none'),))
@@ -172,10 +172,10 @@ class RustCompiler(Compiler):
 
     def get_option_compile_args(self, options: 'KeyedOptionDictType') -> T.List[str]:
         args = []
-        key = OptionKey('std', machine=self.for_machine, lang=self.language)
-        std = options[key]
-        if std.value != 'none':
-            args.append('--edition=' + std.value)
+        key = self.form_langopt_key('std')
+        std = options.get_value(key)
+        if std != 'none':
+            args.append('--edition=' + std)
         return args
 
     def get_crt_compile_args(self, crt_val: str, buildtype: str) -> T.List[str]:

@@ -11,6 +11,10 @@ import collections
 
 from . import coredata
 from . import mesonlib
+from . import machinefile
+
+CmdLineFileParser = machinefile.CmdLineFileParser
+
 from .mesonlib import (
     MesonException, MachineChoice, Popen_safe, PerMachine,
     PerMachineDefaultable, PerThreeMachineDefaultable, split_args, quote_arg, OptionKey,
@@ -516,7 +520,7 @@ class Environment:
     log_dir = 'meson-logs'
     info_dir = 'meson-info'
 
-    def __init__(self, source_dir: str, build_dir: str, options: coredata.SharedCMDOptions) -> None:
+    def __init__(self, source_dir: str, build_dir: str, cmd_options: coredata.SharedCMDOptions) -> None:
         self.source_dir = source_dir
         self.build_dir = build_dir
         # Do not try to create build directories when build_dir is none.
@@ -532,26 +536,26 @@ class Environment:
                 self.coredata: coredata.CoreData = coredata.load(self.get_build_dir(), suggest_reconfigure=False)
                 self.first_invocation = False
             except FileNotFoundError:
-                self.create_new_coredata(options)
+                self.create_new_coredata(cmd_options)
             except coredata.MesonVersionMismatchException as e:
                 # This is routine, but tell the user the update happened
                 mlog.log('Regenerating configuration from scratch:', str(e))
-                coredata.read_cmd_line_file(self.build_dir, options)
-                self.create_new_coredata(options)
+                coredata.read_cmd_line_file(self.build_dir, cmd_options)
+                self.create_new_coredata(cmd_options)
             except MesonException as e:
                 # If we stored previous command line options, we can recover from
                 # a broken/outdated coredata.
                 if os.path.isfile(coredata.get_cmd_line_file(self.build_dir)):
                     mlog.warning('Regenerating configuration from scratch.', fatal=False)
                     mlog.log('Reason:', mlog.red(str(e)))
-                    coredata.read_cmd_line_file(self.build_dir, options)
-                    self.create_new_coredata(options)
+                    coredata.read_cmd_line_file(self.build_dir, cmd_options)
+                    self.create_new_coredata(cmd_options)
                 else:
                     raise MesonException(f'{str(e)} Try regenerating using "meson setup --wipe".')
         else:
             # Just create a fresh coredata in this case
             self.scratch_dir = ''
-            self.create_new_coredata(options)
+            self.create_new_coredata(cmd_options)
 
         ## locally bind some unfrozen configuration
 
@@ -589,7 +593,7 @@ class Environment:
         ## Read in native file(s) to override build machine configuration
 
         if self.coredata.config_files is not None:
-            config = coredata.parse_machine_files(self.coredata.config_files, self.source_dir)
+            config = machinefile.parse_machine_files(self.coredata.config_files, self.source_dir)
             binaries.build = BinaryTable(config.get('binaries', {}))
             properties.build = Properties(config.get('properties', {}))
             cmakevars.build = CMakeVariables(config.get('cmake', {}))
@@ -600,7 +604,7 @@ class Environment:
         ## Read in cross file(s) to override host machine configuration
 
         if self.coredata.cross_files:
-            config = coredata.parse_machine_files(self.coredata.cross_files, self.source_dir)
+            config = machinefile.parse_machine_files(self.coredata.cross_files, self.source_dir)
             properties.host = Properties(config.get('properties', {}))
             binaries.host = BinaryTable(config.get('binaries', {}))
             cmakevars.host = CMakeVariables(config.get('cmake', {}))
@@ -623,7 +627,7 @@ class Environment:
         self.cmakevars = cmakevars.default_missing()
 
         # Command line options override those from cross/native files
-        self.options.update(options.cmd_line_options)
+        self.options.update(cmd_options.cmd_line_options)
 
         # Take default value from env if not set in cross/native files or command line.
         self._set_default_options_from_env()
