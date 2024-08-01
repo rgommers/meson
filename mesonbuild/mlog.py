@@ -554,8 +554,8 @@ def ci_fold_file(fname: T.Union[str, os.PathLike], banner: str, force: bool = Fa
         return None
 
     if _ci_is_github:
-        header = f'::group::==== {banner} ===='
-        footer = '::endgroup::'
+        header = f'    ::group::==== {banner} ===='
+        footer = '    ::endgroup::'
     elif force:
         header = banner
         footer = ''
