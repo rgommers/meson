@@ -74,8 +74,9 @@ def setup_console() -> None:
         except AttributeError:
             pass
 
-_in_ci = 'CI' in os.environ
-_ci_is_github = 'GITHUB_ACTIONS' in os.environ
+#DEBUG: force both to true
+_in_ci = True  #  'CI' in os.environ
+_ci_is_github = True #'GITHUB_ACTIONS' in os.environ
 
 
 class _Severity(enum.Enum):

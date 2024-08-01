@@ -26,7 +26,7 @@ def errorhandler(e: Exception, command: str) -> int:
         mlog.exception(e)
         logfile = mlog.shutdown()
         if logfile is not None:
-            mlog.log("\nA full log can be found at", mlog.bold(logfile))
+            mlog.log("\nA more detailed log can be found at", mlog.bold(logfile))
             contents = mlog.ci_fold_file(logfile, 'CI platform detected, click here for log contents.')
             if contents:
                 print(contents)
