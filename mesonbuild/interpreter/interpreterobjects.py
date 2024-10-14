@@ -8,11 +8,11 @@ import textwrap
 from pathlib import Path, PurePath
 
 from .. import mesonlib
-from .. import coredata
+from .. import options
 from .. import build
 from .. import mlog
 
-from ..modules import ModuleReturnValue, ModuleObject, ModuleState, ExtensionModule
+from ..modules import ModuleReturnValue, ModuleObject, ModuleState, ExtensionModule, NewExtensionModule
 from ..backend.backends import TestProtocol
 from ..interpreterbase import (
                                ContainerTypeInfo, KwargInfo, MesonOperator,
@@ -24,7 +24,7 @@ from ..interpreterbase import (
 from ..interpreter.type_checking import NoneType, ENV_KW, ENV_SEPARATOR_KW, PKGCONFIG_DEFINE_KW
 from ..dependencies import Dependency, ExternalLibrary, InternalDependency
 from ..programs import ExternalProgram
-from ..mesonlib import HoldableObject, OptionKey, listify, Popen_safe
+from ..mesonlib import HoldableObject, listify, Popen_safe
 
 import typing as T
 
@@ -52,7 +52,7 @@ def extract_required_kwarg(kwargs: 'kwargs.ExtractRequired',
     disabled = False
     required = False
     feature: T.Optional[str] = None
-    if isinstance(val, coredata.UserFeatureOption):
+    if isinstance(val, options.UserFeatureOption):
         if not feature_check:
             feature_check = FeatureNew('User option "feature"', '0.47.0')
         feature_check.use(subproject)
@@ -85,12 +85,12 @@ def extract_search_dirs(kwargs: 'kwargs.ExtractSearchDirs') -> T.List[str]:
             raise InvalidCode(f'Search directory {d} is not an absolute path.')
     return [str(s) for s in search_dirs]
 
-class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
-    def __init__(self, option: coredata.UserFeatureOption, interpreter: 'Interpreter'):
+class FeatureOptionHolder(ObjectHolder[options.UserFeatureOption]):
+    def __init__(self, option: options.UserFeatureOption, interpreter: 'Interpreter'):
         super().__init__(option, interpreter)
         if option and option.is_auto():
             # TODO: we need to cast here because options is not a TypedDict
-            auto = T.cast('coredata.UserFeatureOption', self.env.coredata.options[OptionKey('auto_features')])
+            auto = T.cast('options.UserFeatureOption', self.env.coredata.optstore.get_value_object('auto_features'))
             self.held_object = copy.copy(auto)
             self.held_object.name = option.name
         self.methods.update({'enabled': self.enabled_method,
@@ -108,12 +108,12 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
     def value(self) -> str:
         return 'disabled' if not self.held_object else self.held_object.value
 
-    def as_disabled(self) -> coredata.UserFeatureOption:
+    def as_disabled(self) -> options.UserFeatureOption:
         disabled = copy.deepcopy(self.held_object)
         disabled.value = 'disabled'
         return disabled
 
-    def as_enabled(self) -> coredata.UserFeatureOption:
+    def as_enabled(self) -> options.UserFeatureOption:
         enabled = copy.deepcopy(self.held_object)
         enabled.value = 'enabled'
         return enabled
@@ -139,7 +139,7 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
     def auto_method(self, args: T.List[TYPE_var], kwargs: TYPE_kwargs) -> bool:
         return self.value == 'auto'
 
-    def _disable_if(self, condition: bool, message: T.Optional[str]) -> coredata.UserFeatureOption:
+    def _disable_if(self, condition: bool, message: T.Optional[str]) -> options.UserFeatureOption:
         if not condition:
             return copy.deepcopy(self.held_object)
 
@@ -156,7 +156,7 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
         'feature_option.require',
         _ERROR_MSG_KW,
     )
-    def require_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> coredata.UserFeatureOption:
+    def require_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> options.UserFeatureOption:
         return self._disable_if(not args[0], kwargs['error_message'])
 
     @FeatureNew('feature_option.disable_if()', '1.1.0')
@@ -165,7 +165,7 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
         'feature_option.disable_if',
         _ERROR_MSG_KW,
     )
-    def disable_if_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> coredata.UserFeatureOption:
+    def disable_if_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> options.UserFeatureOption:
         return self._disable_if(args[0], kwargs['error_message'])
 
     @FeatureNew('feature_option.enable_if()', '1.1.0')
@@ -174,7 +174,7 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
         'feature_option.enable_if',
         _ERROR_MSG_KW,
     )
-    def enable_if_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> coredata.UserFeatureOption:
+    def enable_if_method(self, args: T.Tuple[bool], kwargs: 'kwargs.FeatureOptionRequire') -> options.UserFeatureOption:
         if not args[0]:
             return copy.deepcopy(self.held_object)
 
@@ -188,13 +188,13 @@ class FeatureOptionHolder(ObjectHolder[coredata.UserFeatureOption]):
     @FeatureNew('feature_option.disable_auto_if()', '0.59.0')
     @noKwargs
     @typed_pos_args('feature_option.disable_auto_if', bool)
-    def disable_auto_if_method(self, args: T.Tuple[bool], kwargs: TYPE_kwargs) -> coredata.UserFeatureOption:
+    def disable_auto_if_method(self, args: T.Tuple[bool], kwargs: TYPE_kwargs) -> options.UserFeatureOption:
         return copy.deepcopy(self.held_object) if self.value != 'auto' or not args[0] else self.as_disabled()
 
     @FeatureNew('feature_option.enable_auto_if()', '1.1.0')
     @noKwargs
     @typed_pos_args('feature_option.enable_auto_if', bool)
-    def enable_auto_if_method(self, args: T.Tuple[bool], kwargs: TYPE_kwargs) -> coredata.UserFeatureOption:
+    def enable_auto_if_method(self, args: T.Tuple[bool], kwargs: TYPE_kwargs) -> options.UserFeatureOption:
         return self.as_enabled() if self.value == 'auto' and args[0] else copy.deepcopy(self.held_object)
 
 
@@ -284,7 +284,6 @@ class EnvironmentVariablesHolder(ObjectHolder[mesonlib.EnvironmentVariables], Mu
 
     def __init__(self, obj: mesonlib.EnvironmentVariables, interpreter: 'Interpreter'):
         super().__init__(obj, interpreter)
-        MutableInterpreterObject.__init__(self)
         self.methods.update({'set': self.set_method,
                              'unset': self.unset_method,
                              'append': self.append_method,
@@ -309,14 +308,12 @@ class EnvironmentVariablesHolder(ObjectHolder[mesonlib.EnvironmentVariables], Mu
     @typed_kwargs('environment.set', ENV_SEPARATOR_KW)
     def set_method(self, args: T.Tuple[str, T.List[str]], kwargs: 'EnvironmentSeparatorKW') -> None:
         name, values = args
-        self.check_used(self.interpreter, fatal=False)
         self.held_object.set(name, values, kwargs['separator'])
 
     @FeatureNew('environment.unset', '1.4.0')
     @typed_pos_args('environment.unset', str)
     @noKwargs
     def unset_method(self, args: T.Tuple[str], kwargs: TYPE_kwargs) -> None:
-        self.check_used(self.interpreter, fatal=False)
         self.held_object.unset(args[0])
 
     @typed_pos_args('environment.append', str, varargs=str, min_varargs=1)
@@ -324,7 +321,6 @@ class EnvironmentVariablesHolder(ObjectHolder[mesonlib.EnvironmentVariables], Mu
     def append_method(self, args: T.Tuple[str, T.List[str]], kwargs: 'EnvironmentSeparatorKW') -> None:
         name, values = args
         self.warn_if_has_name(name)
-        self.check_used(self.interpreter, fatal=False)
         self.held_object.append(name, values, kwargs['separator'])
 
     @typed_pos_args('environment.prepend', str, varargs=str, min_varargs=1)
@@ -332,7 +328,6 @@ class EnvironmentVariablesHolder(ObjectHolder[mesonlib.EnvironmentVariables], Mu
     def prepend_method(self, args: T.Tuple[str, T.List[str]], kwargs: 'EnvironmentSeparatorKW') -> None:
         name, values = args
         self.warn_if_has_name(name)
-        self.check_used(self.interpreter, fatal=False)
         self.held_object.prepend(name, values, kwargs['separator'])
 
 
@@ -343,7 +338,6 @@ class ConfigurationDataHolder(ObjectHolder[build.ConfigurationData], MutableInte
 
     def __init__(self, obj: build.ConfigurationData, interpreter: 'Interpreter'):
         super().__init__(obj, interpreter)
-        MutableInterpreterObject.__init__(self)
         self.methods.update({'set': self.set_method,
                              'set10': self.set10_method,
                              'set_quoted': self.set_quoted_method,
@@ -355,31 +349,32 @@ class ConfigurationDataHolder(ObjectHolder[build.ConfigurationData], MutableInte
                              })
 
     def __deepcopy__(self, memo: T.Dict) -> 'ConfigurationDataHolder':
-        obj = ConfigurationDataHolder(copy.deepcopy(self.held_object), self.interpreter)
+        return ConfigurationDataHolder(copy.deepcopy(self.held_object), self.interpreter)
+
+    def is_used(self) -> bool:
+        return self.held_object.used
+
+    def __check_used(self) -> None:
         if self.is_used():
-            # Copies of used ConfigurationData used to be immutable. It is now
-            # allowed but we need this flag to print a FeatureNew warning if
-            # that happens.
-            obj.mutable_feature_new = True
-        return obj
+            raise InterpreterException("Can not set values on configuration object that has been used.")
 
     @typed_pos_args('configuration_data.set', str, (str, int, bool))
     @typed_kwargs('configuration_data.set', _CONF_DATA_SET_KWS)
     def set_method(self, args: T.Tuple[str, T.Union[str, int, bool]], kwargs: 'kwargs.ConfigurationDataSet') -> None:
-        self.check_used(self.interpreter)
+        self.__check_used()
         self.held_object.values[args[0]] = (args[1], kwargs['description'])
 
     @typed_pos_args('configuration_data.set_quoted', str, str)
     @typed_kwargs('configuration_data.set_quoted', _CONF_DATA_SET_KWS)
     def set_quoted_method(self, args: T.Tuple[str, str], kwargs: 'kwargs.ConfigurationDataSet') -> None:
-        self.check_used(self.interpreter)
+        self.__check_used()
         escaped_val = '\\"'.join(args[1].split('"'))
         self.held_object.values[args[0]] = (f'"{escaped_val}"', kwargs['description'])
 
     @typed_pos_args('configuration_data.set10', str, (int, bool))
     @typed_kwargs('configuration_data.set10', _CONF_DATA_SET_KWS)
     def set10_method(self, args: T.Tuple[str, T.Union[int, bool]], kwargs: 'kwargs.ConfigurationDataSet') -> None:
-        self.check_used(self.interpreter)
+        self.__check_used()
         # bool is a subclass of int, so we need to check for bool explicitly.
         # We already have typed_pos_args checking that this is either a bool or
         # an int.
@@ -442,7 +437,6 @@ class ConfigurationDataHolder(ObjectHolder[build.ConfigurationData], MutableInte
     @noKwargs
     def merge_from_method(self, args: T.Tuple[build.ConfigurationData], kwargs: TYPE_kwargs) -> None:
         from_object = args[0]
-        self.check_used(self.interpreter)
         self.held_object.values.update(from_object.values)
 
 
@@ -850,6 +844,10 @@ class ModuleObjectHolder(ObjectHolder[ModuleObject]):
             args = flatten(args)
         if not getattr(method, 'no-second-level-holder-flattening', False):
             args, kwargs = resolve_second_level_holders(args, kwargs)
+        if not self.interpreter.active_projectname:
+            assert isinstance(modobj, (ExtensionModule, NewExtensionModule)), 'for mypy'
+            full_method_name = f'{modobj.INFO.name}.{method_name}'
+            raise mesonlib.MesonException(f'Module methods ({full_method_name}) cannot be invoked during project declaration.')
         state = ModuleState(self.interpreter)
         # Many modules do for example self.interpreter.find_program_impl(),
         # so we have to ensure they use the current interpreter and not the one

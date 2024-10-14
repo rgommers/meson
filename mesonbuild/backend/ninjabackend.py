@@ -98,10 +98,11 @@ def get_rsp_threshold() -> int:
         # and that has a limit of 8k.
         limit = 8192
     else:
-        # On Linux, ninja always passes the commandline as a single
-        # big string to /bin/sh, and the kernel limits the size of a
-        # single argument; see MAX_ARG_STRLEN
-        limit = 131072
+        # Unix-like OSes usualy have very large command line limits, (On Linux,
+        # for example, this is limited by the kernel's MAX_ARG_STRLEN). However,
+        # some programs place much lower limits, notably Wine which enforces a
+        # 32k limit like Windows. Therefore, we limit the command line to 32k.
+        limit = 32768
     # Be conservative
     limit = limit // 2
     return int(os.environ.get('MESON_RSP_THRESHOLD', limit))
@@ -291,7 +292,7 @@ class NinjaRule:
         estimate = len(command)
         for m in re.finditer(r'(\${\w+}|\$\w+)?[^$]*', command):
             if m.start(1) != -1:
-                estimate -= m.end(1) - m.start(1) + 1
+                estimate -= m.end(1) - m.start(1)
                 chunk = m.group(1)
                 if chunk[1] == '{':
                     chunk = chunk[2:-1]
@@ -502,13 +503,12 @@ class NinjaBackend(backends.Backend):
         # hence we disable them if 'cuda' is enabled globally. See also
         # - https://github.com/mesonbuild/meson/pull/9453
         # - https://github.com/mesonbuild/meson/issues/9479#issuecomment-953485040
-        self._allow_thin_archives = PerMachine[bool](
-            'cuda' not in self.environment.coredata.compilers.build,
-            'cuda' not in self.environment.coredata.compilers.host) if self.environment else PerMachine[bool](True, True)
-        if not self._allow_thin_archives.build:
-            mlog.debug('cuda enabled globally, disabling thin archives for build machine, since nvcc/nvlink cannot handle thin archives natively')
-        if not self._allow_thin_archives.host:
-            mlog.debug('cuda enabled globally, disabling thin archives for host machine, since nvcc/nvlink cannot handle thin archives natively')
+        self.allow_thin_archives = PerMachine[bool](True, True)
+        if self.environment:
+            for for_machine in MachineChoice:
+                if 'cuda' in self.environment.coredata.compilers[for_machine]:
+                    mlog.debug('cuda enabled globally, disabling thin archives for {}, since nvcc/nvlink cannot handle thin archives natively'.format(for_machine))
+                    self.allow_thin_archives[for_machine] = False
 
     def create_phony_target(self, dummy_outfile: str, rulename: str, phony_infilename: str) -> NinjaBuildElement:
         '''
@@ -624,7 +624,7 @@ class NinjaBackend(backends.Backend):
             outfile.write('# Do not edit by hand.\n\n')
             outfile.write('ninja_required_version = 1.8.2\n\n')
 
-            num_pools = self.environment.coredata.options[OptionKey('backend_max_links')].value
+            num_pools = self.environment.coredata.optstore.get_value('backend_max_links')
             if num_pools > 0:
                 outfile.write(f'''pool link_pool
   depth = {num_pools}
@@ -657,8 +657,8 @@ class NinjaBackend(backends.Backend):
             self.generate_dist()
             mlog.log_timestamp("Dist generated")
             key = OptionKey('b_coverage')
-            if (key in self.environment.coredata.options and
-                    self.environment.coredata.options[key].value):
+            if (key in self.environment.coredata.optstore and
+                    self.environment.coredata.optstore.get_value(key)):
                 gcovr_exe, gcovr_version, lcov_exe, lcov_version, genhtml_exe, llvm_cov_exe = environment.find_coverage_tools(self.environment.coredata)
                 mlog.debug(f'Using {gcovr_exe} ({gcovr_version}), {lcov_exe} and {llvm_cov_exe} for code coverage')
                 if gcovr_exe or (lcov_exe and genhtml_exe):
@@ -700,10 +700,11 @@ class NinjaBackend(backends.Backend):
             return
         with open(os.path.join(self.environment.get_build_dir(), 'rust-project.json'),
                   'w', encoding='utf-8') as f:
+            sysroot = self.environment.coredata.compilers.host['rust'].get_sysroot()
             json.dump(
                 {
-                    "sysroot_src": os.path.join(self.environment.coredata.compilers.host['rust'].get_sysroot(),
-                                                'lib/rustlib/src/rust/library/'),
+                    "sysroot": sysroot,
+                    "sysroot_src": os.path.join(sysroot, 'lib/rustlib/src/rust/library/'),
                     "crates": [c.to_json() for c in self.rust_crates.values()],
                 },
                 f, indent=4)
@@ -865,11 +866,8 @@ class NinjaBackend(backends.Backend):
             tgt[lnk_hash] = lnk_block
 
     def generate_target(self, target):
-        try:
-            if isinstance(target, build.BuildTarget):
-                os.makedirs(self.get_target_private_dir_abs(target))
-        except FileExistsError:
-            pass
+        if isinstance(target, build.BuildTarget):
+            os.makedirs(self.get_target_private_dir_abs(target), exist_ok=True)
         if isinstance(target, build.CustomTarget):
             self.generate_custom_target(target)
         if isinstance(target, build.RunTarget):
@@ -1413,7 +1411,6 @@ class NinjaBackend(backends.Backend):
         outname_rel = os.path.join(self.get_target_dir(target), fname)
         src_list = target.get_sources()
         resources = target.get_java_resources()
-        class_list = []
         compiler = target.compilers['java']
         c = 'c'
         m = 'm'
@@ -1431,10 +1428,8 @@ class NinjaBackend(backends.Backend):
             if rel_src.endswith('.java'):
                 gen_src_list.append(raw_src)
 
-        compile_args = self.determine_single_java_compile_args(target, compiler)
-        for src in src_list + gen_src_list:
-            plain_class_path = self.generate_single_java_compile(src, target, compiler, compile_args)
-            class_list.append(plain_class_path)
+        compile_args = self.determine_java_compile_args(target, compiler)
+        class_list = self.generate_java_compile(src_list + gen_src_list, target, compiler, compile_args)
         class_dep_list = [os.path.join(self.get_target_private_dir(target), i) for i in class_list]
         manifest_path = os.path.join(self.get_target_private_dir(target), 'META-INF', 'MANIFEST.MF')
         manifest_fullpath = os.path.join(self.environment.get_build_dir(), manifest_path)
@@ -1531,7 +1526,8 @@ class NinjaBackend(backends.Backend):
         self.generate_generator_list_rules(target)
         self.create_target_source_introspection(target, compiler, commands, rel_srcs, generated_rel_srcs)
 
-    def determine_single_java_compile_args(self, target, compiler):
+    def determine_java_compile_args(self, target, compiler):
+        args = []
         args = self.generate_basic_compiler_args(target, compiler)
         args += target.get_java_args()
         args += compiler.get_output_args(self.get_target_private_dir(target))
@@ -1545,20 +1541,30 @@ class NinjaBackend(backends.Backend):
         args += ['-sourcepath', sourcepath]
         return args
 
-    def generate_single_java_compile(self, src, target, compiler, args):
+    def generate_java_compile(self, srcs, target, compiler, args):
         deps = [os.path.join(self.get_target_dir(l), l.get_filename()) for l in target.link_targets]
         generated_sources = self.get_target_generated_sources(target)
         for rel_src in generated_sources.keys():
             if rel_src.endswith('.java'):
                 deps.append(rel_src)
-        rel_src = src.rel_to_builddir(self.build_to_src)
-        plain_class_path = src.fname[:-4] + 'class'
-        rel_obj = os.path.join(self.get_target_private_dir(target), plain_class_path)
-        element = NinjaBuildElement(self.all_outputs, rel_obj, self.compiler_to_rule_name(compiler), rel_src)
+
+        rel_srcs = []
+        plain_class_paths = []
+        rel_objs = []
+        for src in srcs:
+            rel_src = src.rel_to_builddir(self.build_to_src)
+            rel_srcs.append(rel_src)
+
+            plain_class_path = src.fname[:-4] + 'class'
+            plain_class_paths.append(plain_class_path)
+            rel_obj = os.path.join(self.get_target_private_dir(target), plain_class_path)
+            rel_objs.append(rel_obj)
+        element = NinjaBuildElement(self.all_outputs, rel_objs, self.compiler_to_rule_name(compiler), rel_srcs)
         element.add_dep(deps)
         element.add_item('ARGS', args)
+        element.add_item('FOR_JAR', self.get_target_filename(target))
         self.add_build(element)
-        return plain_class_path
+        return plain_class_paths
 
     def generate_java_link(self):
         rule = 'java_LINKER'
@@ -1984,7 +1990,7 @@ class NinjaBackend(backends.Backend):
                 buildtype = target.get_option(OptionKey('buildtype'))
                 crt = target.get_option(OptionKey('b_vscrt'))
                 args += rustc.get_crt_link_args(crt, buildtype)
-            except KeyError:
+            except (KeyError, AttributeError):
                 pass
 
         if mesonlib.version_compare(rustc.version, '>= 1.67.0'):
@@ -2288,7 +2294,7 @@ class NinjaBackend(backends.Backend):
         return options
 
     def generate_static_link_rules(self):
-        num_pools = self.environment.coredata.options[OptionKey('backend_max_links')].value
+        num_pools = self.environment.coredata.optstore.get_value('backend_max_links')
         if 'java' in self.environment.coredata.compilers.host:
             self.generate_java_link()
         for for_machine in MachineChoice:
@@ -2336,7 +2342,7 @@ class NinjaBackend(backends.Backend):
             self.add_rule(NinjaRule(rule, cmdlist, args, description, **options, extra=pool))
 
     def generate_dynamic_link_rules(self):
-        num_pools = self.environment.coredata.options[OptionKey('backend_max_links')].value
+        num_pools = self.environment.coredata.optstore.get_value('backend_max_links')
         for for_machine in MachineChoice:
             complist = self.environment.coredata.compilers[for_machine]
             for langname, compiler in complist.items():
@@ -2377,7 +2383,7 @@ class NinjaBackend(backends.Backend):
     def generate_java_compile_rule(self, compiler):
         rule = self.compiler_to_rule_name(compiler)
         command = compiler.get_exelist() + ['$ARGS', '$in']
-        description = 'Compiling Java object $in'
+        description = 'Compiling Java sources for $FOR_JAR'
         self.add_rule(NinjaRule(rule, command, [], description))
 
     def generate_cs_compile_rule(self, compiler: 'CsCompiler') -> None:
@@ -3268,7 +3274,7 @@ https://gcc.gnu.org/bugzilla/show_bug.cgi?id=47485'''))
             if target.import_filename:
                 commands += linker.gen_import_library_args(self.get_import_filename(target))
         elif isinstance(target, build.StaticLibrary):
-            produce_thin_archive = self._allow_thin_archives[target.for_machine] and not target.should_install()
+            produce_thin_archive = self.allow_thin_archives[target.for_machine] and not target.should_install()
             commands += linker.get_std_link_args(self.environment, produce_thin_archive)
         else:
             raise RuntimeError('Unknown build target type.')
@@ -3598,7 +3604,7 @@ https://gcc.gnu.org/bugzilla/show_bug.cgi?id=47485'''))
 
     def get_user_option_args(self):
         cmds = []
-        for (k, v) in self.environment.coredata.options.items():
+        for k, v in self.environment.coredata.optstore.items():
             if k.is_project():
                 cmds.append('-D' + str(k) + '=' + (v.value if isinstance(v.value, str) else str(v.value).lower()))
         # The order of these arguments must be the same between runs of Meson
@@ -3727,8 +3733,8 @@ https://gcc.gnu.org/bugzilla/show_bug.cgi?id=47485'''))
         if ctlist:
             elem.add_dep(self.generate_custom_target_clean(ctlist))
 
-        if OptionKey('b_coverage') in self.environment.coredata.options and \
-           self.environment.coredata.options[OptionKey('b_coverage')].value:
+        if OptionKey('b_coverage') in self.environment.coredata.optstore and \
+           self.environment.coredata.optstore.get_value('b_coverage'):
             self.generate_gcov_clean()
             elem.add_dep('clean-gcda')
             elem.add_dep('clean-gcno')

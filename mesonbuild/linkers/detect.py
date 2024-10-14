@@ -45,7 +45,7 @@ def guess_win_linker(env: 'Environment', compiler: T.List[str], comp_class: T.Ty
         check_args = ['/logo', '--version']
     elif isinstance(comp_class.LINKER_PREFIX, str):
         check_args = [comp_class.LINKER_PREFIX + '/logo', comp_class.LINKER_PREFIX + '--version']
-    elif isinstance(comp_class.LINKER_PREFIX, list):
+    else: # list
         check_args = comp_class.LINKER_PREFIX + ['/logo'] + comp_class.LINKER_PREFIX + ['--version']
 
     check_args += env.coredata.get_external_link_args(for_machine, comp_class.language)
@@ -64,7 +64,7 @@ def guess_win_linker(env: 'Environment', compiler: T.List[str], comp_class: T.Ty
 
     p, o, _ = Popen_safe(compiler + check_args)
     if 'LLD' in o.split('\n', maxsplit=1)[0]:
-        if '(compatible with GNU linkers)' in o:
+        if 'compatible with GNU linkers' in o:
             return linkers.LLVMDynamicLinker(
                 compiler, for_machine, comp_class.LINKER_PREFIX,
                 override, version=search_version(o))

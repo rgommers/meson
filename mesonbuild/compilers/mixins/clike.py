@@ -26,7 +26,7 @@ from ... import arglist
 from ... import mesonlib
 from ... import mlog
 from ...linkers.linkers import GnuLikeDynamicLinkerMixin, SolarisDynamicLinker, CompCertDynamicLinker
-from ...mesonlib import LibType, OptionKey
+from ...mesonlib import LibType
 from .. import compilers
 from ..compilers import CompileCheckMode
 from .visualstudio import VisualStudioLikeCompiler
@@ -98,12 +98,12 @@ class CLikeCompilerArgs(arglist.CompilerArgs):
                     continue
 
                 # Remove the -isystem and the path if the path is a default path
-                if (each == '-isystem' and
-                        i < (len(new) - 1) and
-                        self._cached_realpath(new[i + 1]) in real_default_dirs):
-                    bad_idx_list += [i, i + 1]
-                elif each.startswith('-isystem=') and self._cached_realpath(each[9:]) in real_default_dirs:
-                    bad_idx_list += [i]
+                if each == '-isystem':
+                    if i < (len(new) - 1) and self._cached_realpath(new[i + 1]) in real_default_dirs:
+                        bad_idx_list += [i, i + 1]
+                elif each.startswith('-isystem='):
+                    if self._cached_realpath(each[9:]) in real_default_dirs:
+                        bad_idx_list += [i]
                 elif self._cached_realpath(each[8:]) in real_default_dirs:
                     bad_idx_list += [i]
             for i in reversed(bad_idx_list):
@@ -376,8 +376,8 @@ class CLikeCompiler(Compiler):
             # linking with static libraries since MSVC won't select a CRT for
             # us in that case and will error out asking us to pick one.
             try:
-                crt_val = env.coredata.options[OptionKey('b_vscrt')].value
-                buildtype = env.coredata.options[OptionKey('buildtype')].value
+                crt_val = env.coredata.optstore.get_value('b_vscrt')
+                buildtype = env.coredata.optstore.get_value('buildtype')
                 cargs += self.get_crt_compile_args(crt_val, buildtype)
             except (KeyError, AttributeError):
                 pass
@@ -417,7 +417,7 @@ class CLikeCompiler(Compiler):
         else:
             # TODO: we want to do this in the caller
             extra_args = mesonlib.listify(extra_args)
-        extra_args = mesonlib.listify([e(mode.value) if callable(e) else e for e in extra_args])
+        extra_args = mesonlib.listify([e(mode) if callable(e) else e for e in extra_args])
 
         if dependencies is None:
             dependencies = []
@@ -870,11 +870,12 @@ class CLikeCompiler(Compiler):
         if extra_args is None:
             extra_args = []
         # Create code that accesses all members
-        members = ''.join(f'foo.{member};\n' for member in membernames)
+        members = ''.join(f'(void) ( foo.{member} );\n' for member in membernames)
         t = f'''{prefix}
         void bar(void) {{
             {typename} foo;
             {members}
+            (void) foo;
         }}'''
         return self.compiles(t, env, extra_args=extra_args,
                              dependencies=dependencies)
@@ -884,7 +885,7 @@ class CLikeCompiler(Compiler):
                  dependencies: T.Optional[T.List['Dependency']] = None) -> T.Tuple[bool, bool]:
         t = f'''{prefix}
         void bar(void) {{
-            sizeof({typename});
+            (void) sizeof({typename});
         }}'''
         return self.compiles(t, env, extra_args=extra_args,
                              dependencies=dependencies)

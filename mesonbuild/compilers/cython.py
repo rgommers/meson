@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import typing as T
 
-from .. import coredata
-from ..mesonlib import EnvironmentException, OptionKey, version_compare
+from .. import options
+from ..mesonlib import EnvironmentException, version_compare
 from .compilers import Compiler
 
 if T.TYPE_CHECKING:
@@ -69,13 +69,13 @@ class CythonCompiler(Compiler):
     def get_options(self) -> 'MutableKeyedOptionDictType':
         return self.update_options(
             super().get_options(),
-            self.create_option(coredata.UserComboOption,
-                               OptionKey('version', machine=self.for_machine, lang=self.language),
+            self.create_option(options.UserComboOption,
+                               self.form_langopt_key('version'),
                                'Python version to target',
                                ['2', '3'],
                                '3'),
-            self.create_option(coredata.UserComboOption,
-                               OptionKey('language', machine=self.for_machine, lang=self.language),
+            self.create_option(options.UserComboOption,
+                               self.form_langopt_key('language'),
                                'Output C or C++ files',
                                ['c', 'cpp'],
                                'c'),
@@ -83,9 +83,11 @@ class CythonCompiler(Compiler):
 
     def get_option_compile_args(self, options: 'KeyedOptionDictType') -> T.List[str]:
         args: T.List[str] = []
-        key = options[OptionKey('version', machine=self.for_machine, lang=self.language)]
-        args.append(f'-{key.value}')
-        lang = options[OptionKey('language', machine=self.for_machine, lang=self.language)]
-        if lang.value == 'cpp':
+        key = self.form_langopt_key('version')
+        version = options.get_value(key)
+        args.append(f'-{version}')
+        key = self.form_langopt_key('language')
+        lang = options.get_value(key)
+        if lang == 'cpp':
             args.append('--cplus')
         return args

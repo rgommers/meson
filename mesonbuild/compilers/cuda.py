@@ -9,10 +9,11 @@ import string
 import typing as T
 
 from .. import coredata
+from .. import options
 from .. import mlog
 from ..mesonlib import (
     EnvironmentException, Popen_safe,
-    is_windows, LibType, OptionKey, version_compare,
+    is_windows, LibType, version_compare, OptionKey
 )
 from .compilers import Compiler
 
@@ -548,7 +549,7 @@ class CudaCompiler(Compiler):
         # Use the -ccbin option, if available, even during sanity checking.
         # Otherwise, on systems where CUDA does not support the default compiler,
         # NVCC becomes unusable.
-        flags += self.get_ccbin_args(env.coredata.options)
+        flags += self.get_ccbin_args(env.coredata.optstore)
 
         # If cross-compiling, we can't run the sanity check, only compile it.
         if self.is_cross and not env.has_exe_wrapper():
@@ -643,27 +644,28 @@ class CudaCompiler(Compiler):
 
         return self.update_options(
             super().get_options(),
-            self.create_option(coredata.UserComboOption,
-                               OptionKey('std', machine=self.for_machine, lang=self.language),
+            self.create_option(options.UserComboOption,
+                               self.form_langopt_key('std'),
                                'C++ language standard to use with CUDA',
                                cpp_stds,
                                'none'),
-            self.create_option(coredata.UserStringOption,
-                               OptionKey('ccbindir', machine=self.for_machine, lang=self.language),
+            self.create_option(options.UserStringOption,
+                               self.form_langopt_key('ccbindir'),
                                'CUDA non-default toolchain directory to use (-ccbin)',
                                ''),
         )
 
-    def _to_host_compiler_options(self, options: 'KeyedOptionDictType') -> 'KeyedOptionDictType':
+    def _to_host_compiler_options(self, master_options: 'KeyedOptionDictType') -> 'KeyedOptionDictType':
         """
         Convert an NVCC Option set to a host compiler's option set.
         """
 
         # We must strip the -std option from the host compiler option set, as NVCC has
         # its own -std flag that may not agree with the host compiler's.
-        host_options = {key: options.get(key, opt) for key, opt in self.host_compiler.get_options().items()}
+        host_options = {key: master_options.get(key, opt) for key, opt in self.host_compiler.get_options().items()}
         std_key = OptionKey('std', machine=self.for_machine, lang=self.host_compiler.language)
         overrides = {std_key: 'none'}
+        # To shut up mypy.
         return coredata.OptionsView(host_options, overrides=overrides)
 
     def get_option_compile_args(self, options: 'KeyedOptionDictType') -> T.List[str]:
@@ -672,10 +674,10 @@ class CudaCompiler(Compiler):
         # the combination of CUDA version and MSVC version; the --std= is thus ignored
         # and attempting to use it will result in a warning: https://stackoverflow.com/a/51272091/741027
         if not is_windows():
-            key = OptionKey('std', machine=self.for_machine, lang=self.language)
-            std = options[key]
-            if std.value != 'none':
-                args.append('--std=' + std.value)
+            key = self.form_langopt_key('std')
+            std = options.get_value(key)
+            if std != 'none':
+                args.append('--std=' + std)
 
         return args + self._to_host_flags(self.host_compiler.get_option_compile_args(self._to_host_compiler_options(options)))
 
@@ -768,7 +770,7 @@ class CudaCompiler(Compiler):
 
     def find_library(self, libname: str, env: 'Environment', extra_dirs: T.List[str],
                      libtype: LibType = LibType.PREFER_SHARED, lib_prefix_warning: bool = True) -> T.Optional[T.List[str]]:
-        return ['-l' + libname] # FIXME
+        return self.host_compiler.find_library(libname, env, extra_dirs, libtype, lib_prefix_warning)
 
     def get_crt_compile_args(self, crt_val: str, buildtype: str) -> T.List[str]:
         return self._to_host_flags(self.host_compiler.get_crt_compile_args(crt_val, buildtype))
@@ -791,9 +793,9 @@ class CudaCompiler(Compiler):
     def get_dependency_link_args(self, dep: 'Dependency') -> T.List[str]:
         return self._to_host_flags(super().get_dependency_link_args(dep), _Phase.LINKER)
 
-    def get_ccbin_args(self, options: 'KeyedOptionDictType') -> T.List[str]:
-        key = OptionKey('ccbindir', machine=self.for_machine, lang=self.language)
-        ccbindir = options[key].value
+    def get_ccbin_args(self, ccoptions: 'KeyedOptionDictType') -> T.List[str]:
+        key = self.form_langopt_key('ccbindir')
+        ccbindir = ccoptions.get_value(key)
         if isinstance(ccbindir, str) and ccbindir != '':
             return [self._shield_nvcc_list_arg('-ccbin='+ccbindir, False)]
         else:
