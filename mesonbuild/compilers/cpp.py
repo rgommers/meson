@@ -19,6 +19,7 @@ from .compilers import (
     CompileCheckMode,
 )
 from .c_function_attributes import CXX_FUNC_ATTRIBUTES, C_FUNC_ATTRIBUTES
+from .mixins.apple import AppleCompilerMixin
 from .mixins.clike import CLikeCompiler
 from .mixins.ccrx import CcrxCompiler
 from .mixins.ti import TICompiler
@@ -337,7 +338,7 @@ class ArmLtdClangCPPCompiler(ClangCPPCompiler):
     id = 'armltdclang'
 
 
-class AppleClangCPPCompiler(ClangCPPCompiler):
+class AppleClangCPPCompiler(AppleCompilerMixin, ClangCPPCompiler):
 
     _CPP23_VERSION = '>=13.0.0'
     # TODO: We don't know which XCode version will include LLVM 17 yet, so
@@ -617,8 +618,8 @@ class ElbrusCPPCompiler(ElbrusCompiler, CPPCompiler):
         args: T.List[str] = []
         key = self.form_langopt_key('std')
         std = options.get_value(key)
-        if std.value != 'none':
-            args.append(self._find_best_cpp_std(std.value))
+        if std != 'none':
+            args.append(self._find_best_cpp_std(std))
 
         key = self.form_langopt_key('eh')
         non_msvc_eh_options(options.get_value(key), args)
@@ -694,7 +695,7 @@ class IntelCPPCompiler(IntelGnuLikeCompiler, CPPCompiler):
                 'c++03': 'c++98',
                 'gnu++03': 'gnu++98'
             }
-            args.append('-std=' + remap_cpp03.get(std.value, std))
+            args.append('-std=' + remap_cpp03.get(std, std))
         if options.get_value(key.evolve('eh')) == 'none':
             args.append('-fno-exceptions')
         if not options.get_value(key.evolve('rtti')):

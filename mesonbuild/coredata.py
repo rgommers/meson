@@ -12,7 +12,7 @@ import sys
 from itertools import chain
 from pathlib import PurePath
 from collections import OrderedDict, abc
-from dataclasses import dataclass
+import dataclasses
 
 from .mesonlib import (
     MesonBugException,
@@ -72,7 +72,7 @@ if T.TYPE_CHECKING:
 #
 # Pip requires that RCs are named like this: '0.1.0.rc1'
 # But the corresponding Git tag needs to be '0.1.0rc1'
-version = '1.5.0.rc1'
+version = '1.5.2'
 
 # The next stable version when we are in dev. This is used to allow projects to
 # require meson version >=1.2.0 when using 1.1.99. FeatureNew won't warn when
@@ -891,7 +891,7 @@ def parse_cmd_line_options(args: SharedCMDOptions) -> None:
             args.cmd_line_options[key] = value
             delattr(args, name)
 
-@dataclass
+@dataclasses.dataclass
 class OptionsView(abc.Mapping):
     '''A view on an options dictionary for a given subproject and with overrides.
     '''
@@ -900,7 +900,7 @@ class OptionsView(abc.Mapping):
     # python 3.8 or typing_extensions
     original_options: T.Union[KeyedOptionDictType, 'dict[OptionKey, UserOption[Any]]']
     subproject: T.Optional[str] = None
-    overrides: T.Optional[T.Mapping[OptionKey, T.Union[str, int, bool, T.List[str]]]] = None
+    overrides: T.Optional[T.Mapping[OptionKey, T.Union[str, int, bool, T.List[str]]]] = dataclasses.field(default_factory=dict)
 
     def __getitem__(self, key: OptionKey) -> options.UserOption:
         # FIXME: This is fundamentally the same algorithm than interpreter.get_option_internal().

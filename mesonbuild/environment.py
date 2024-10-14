@@ -148,6 +148,9 @@ def find_coverage_tools(coredata: coredata.CoreData) -> T.Tuple[T.Optional[str],
     gcovr_exe, gcovr_version = detect_gcovr()
 
     llvm_cov_exe = detect_llvm_cov(compute_llvm_suffix(coredata))
+    # Some platforms may provide versioned clang but only non-versioned llvm utils
+    if llvm_cov_exe is None:
+        llvm_cov_exe = detect_llvm_cov('')
 
     lcov_exe, lcov_version, genhtml_exe = detect_lcov_genhtml()
 
@@ -192,6 +195,8 @@ def get_llvm_tool_names(tool: str) -> T.List[str]:
     # unless it becomes a stable release.
     suffixes = [
         '', # base (no suffix)
+        '-19.1', '19.1',
+        '-19',  '19',
         '-18.1', '18.1',
         '-18',  '18',
         '-17',  '17',
@@ -213,7 +218,7 @@ def get_llvm_tool_names(tool: str) -> T.List[str]:
         '-3.7', '37',
         '-3.6', '36',
         '-3.5', '35',
-        '-19',    # Debian development snapshot
+        '-20',    # Debian development snapshot
         '-devel', # FreeBSD development snapshot
     ]
     names: T.List[str] = []
@@ -509,11 +514,11 @@ def machine_info_can_run(machine_info: MachineInfo):
     if machine_info.system != detect_system():
         return False
     true_build_cpu_family = detect_cpu_family({})
+    assert machine_info.cpu_family is not None, 'called on incomplete machine_info'
     return \
         (machine_info.cpu_family == true_build_cpu_family) or \
         ((true_build_cpu_family == 'x86_64') and (machine_info.cpu_family == 'x86')) or \
-        ((true_build_cpu_family == 'mips64') and (machine_info.cpu_family == 'mips')) or \
-        ((true_build_cpu_family == 'aarch64') and (machine_info.cpu_family == 'arm'))
+        ((true_build_cpu_family == 'mips64') and (machine_info.cpu_family == 'mips'))
 
 class Environment:
     private_dir = 'meson-private'

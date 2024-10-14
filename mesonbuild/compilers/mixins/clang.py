@@ -58,6 +58,8 @@ class ClangCompiler(GnuLikeCompiler):
         # linkers don't have base_options.
         if isinstance(self.linker, AppleDynamicLinker):
             self.base_options.add(OptionKey('b_bitcode'))
+        elif isinstance(self.linker, MSVCDynamicLinker):
+            self.base_options.add(OptionKey('b_vscrt'))
         # All Clang backends can also do LLVM IR
         self.can_compile_suffixes.add('ll')
 
@@ -123,7 +125,7 @@ class ClangCompiler(GnuLikeCompiler):
         return super().has_function(funcname, prefix, env, extra_args=extra_args,
                                     dependencies=dependencies)
 
-    def openmp_flags(self) -> T.List[str]:
+    def openmp_flags(self, env: Environment) -> T.List[str]:
         if mesonlib.version_compare(self.version, '>=3.8.0'):
             return ['-fopenmp']
         elif mesonlib.version_compare(self.version, '>=3.7.0'):

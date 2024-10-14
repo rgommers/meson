@@ -98,10 +98,11 @@ def get_rsp_threshold() -> int:
         # and that has a limit of 8k.
         limit = 8192
     else:
-        # On Linux, ninja always passes the commandline as a single
-        # big string to /bin/sh, and the kernel limits the size of a
-        # single argument; see MAX_ARG_STRLEN
-        limit = 131072
+        # Unix-like OSes usualy have very large command line limits, (On Linux,
+        # for example, this is limited by the kernel's MAX_ARG_STRLEN). However,
+        # some programs place much lower limits, notably Wine which enforces a
+        # 32k limit like Windows. Therefore, we limit the command line to 32k.
+        limit = 32768
     # Be conservative
     limit = limit // 2
     return int(os.environ.get('MESON_RSP_THRESHOLD', limit))
@@ -291,7 +292,7 @@ class NinjaRule:
         estimate = len(command)
         for m in re.finditer(r'(\${\w+}|\$\w+)?[^$]*', command):
             if m.start(1) != -1:
-                estimate -= m.end(1) - m.start(1) + 1
+                estimate -= m.end(1) - m.start(1)
                 chunk = m.group(1)
                 if chunk[1] == '{':
                     chunk = chunk[2:-1]
@@ -699,10 +700,11 @@ class NinjaBackend(backends.Backend):
             return
         with open(os.path.join(self.environment.get_build_dir(), 'rust-project.json'),
                   'w', encoding='utf-8') as f:
+            sysroot = self.environment.coredata.compilers.host['rust'].get_sysroot()
             json.dump(
                 {
-                    "sysroot_src": os.path.join(self.environment.coredata.compilers.host['rust'].get_sysroot(),
-                                                'lib/rustlib/src/rust/library/'),
+                    "sysroot": sysroot,
+                    "sysroot_src": os.path.join(sysroot, 'lib/rustlib/src/rust/library/'),
                     "crates": [c.to_json() for c in self.rust_crates.values()],
                 },
                 f, indent=4)
