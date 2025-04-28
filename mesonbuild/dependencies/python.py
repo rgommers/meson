@@ -74,6 +74,21 @@ class NumPyConfigToolDependency(ConfigToolDependency):
         self.compile_args = self.get_config_value(['--cflags'], 'compile_args')
 
 
+class PythranConfigToolDependency(ConfigToolDependency):
+
+    tools = ['pythran-config']
+
+    # Pythran 0.17.1 added --cflags-pythran-only, older versions don't have it
+    skip_version = '--cflags-pythran-only'
+
+    def __init__(self, name: str, environment: Environment, kwargs: T.Dict[str, T.Any]):
+        super().__init__(name, environment, kwargs)
+        if not self.is_found:
+            return
+        self.compile_args = self.get_config_value(['--cflags-pythran-only'], 'compile_args')
+
+
+
 class BasicPythonExternalProgram(ExternalProgram):
     def __init__(self, name: str, command: T.Optional[T.List[str]] = None,
                  ext_prog: T.Optional[ExternalProgram] = None):
@@ -447,4 +462,9 @@ packages['numpy'] = numpy_factory = DependencyFactory(
     'numpy',
     [DependencyMethods.PKGCONFIG, DependencyMethods.CONFIG_TOOL],
     configtool_class=NumPyConfigToolDependency,
+)
+packages['pythran'] = pythran_factory = DependencyFactory(
+    'pythran',
+    [DependencyMethods.PKGCONFIG, DependencyMethods.CONFIG_TOOL],
+    configtool_class=PythranConfigToolDependency,
 )
